@@ -14,3 +14,10 @@ export CUPS_CONFIG=$CUPSSRC/cups-config
 make -j8 >$W/make.log 2>&1 || { tail -30 $W/make.log; exit 1; }
 make install >$W/install.log 2>&1 || tail -10 $W/install.log
 ls $HERE/out/host/gutenprint/sbin $HERE/out/host/gutenprint/lib 2>/dev/null | head
+
+# Simplified PPDs for every model (the catalogue ships these; the engine reads STP_DATA_PATH at runtime)
+GEN=$W/src/cups/cups-genppd.5.3
+XML=$W/src/xml
+rm -rf "$HERE/out/gutenprint-ppd"; mkdir -p "$HERE/out/gutenprint-ppd"
+STP_DATA_PATH=$XML "$GEN" -q -s -p "$HERE/out/gutenprint-ppd"
+ls "$HERE/out/gutenprint-ppd" | wc -l
