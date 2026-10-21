@@ -32,4 +32,4 @@ for e in "${ENGINES[@]}"; do
     echo "ok $name $ver"
   fi
 done
-$pin && mv "$LOCK.new" "$LOCK" && cat "$LOCK"
+if $pin; then mv "$LOCK.new" "$LOCK"; cat "$LOCK"; fi
