@@ -1,0 +1,14 @@
+local.properties
+.gradle/
+build/
+*.apk
+tools/sources/
+tools/build/work/
+tools/build/out/
+dist/
+
+# third-party binary kept only for local analysis, never redistributed
+nokoprint-*.apk
+*.jks
+*.keystore
+.cxx/

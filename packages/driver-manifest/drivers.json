@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "drivers": [
+    {
+      "id": "generic-pcl",
+      "name": "Generic PCL 5 (monochrome)",
+      "language": "PCL_MONO",
+      "match": { "cmd": ["PCL", "PCL3", "PCL5", "PCL5E", "PCLXL"], "mfg": ["HP", "Hewlett-Packard"] }
+    },
+    {
+      "id": "generic-ps",
+      "name": "Generic PostScript",
+      "language": "POSTSCRIPT",
+      "match": { "cmd": ["POSTSCRIPT", "PS", "PS3"], "mfg": ["Brother", "Kyocera", "Lexmark", "Ricoh", "Xerox", "Samsung", "Canon", "Epson", "OKI", "Konica Minolta", "Sharp", "Toshiba", "Dell"] }
+    }
+  ]
+}

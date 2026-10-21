@@ -1,0 +1,40 @@
+# DRAFT, never run. Builds the driver packs on Linux and publishes dist/ to GitHub Pages.
+# The local build was done on Windows + WSL (tools/build/*.sh); the host-* steps below are the WSL ones and
+# may need small path fixes on a stock ubuntu runner. Nothing is published until this file is pushed.
+name: driver-packs
+on:
+  workflow_dispatch:
+  push:
+    tags: ["packs-*"]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential autoconf automake libtool pkg-config gettext xz-utils bzip2 python3 patch
+      - name: Fetch and verify upstream sources (tools/sources.lock)
+        run: bash tools/fetch-sources.sh
+      - name: Host tools (ppdc, Gutenprint PPD generator)
+        run: |
+          bash tools/build/host-ppdc.sh
+          bash tools/build/host-ppd-hplip.sh
+          bash tools/build/host-gutenprint.sh
+      - name: Engines for every ABI
+        run: bash tools/build/build-all.sh
+      - name: Catalogue, packs and PPDs
+        run: |
+          python3 -I tools/pack/build_dist.py --base-url "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          python3 -I tools/pack/check_coverage.py --write docs/COVERAGE.md
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

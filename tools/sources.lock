@@ -1,0 +1,7 @@
+splix 2.0.0-svn315 6b42fd19e8d4927bb61b867adce7a98d25aff2023166937eb1cbbf3db6d1501a splix-76268c4dd7dbc8218ea7426401104c3b40cc707a.tar.bz2 https://gitlab.com/ScumCoder/splix/-/archive/76268c4dd7dbc8218ea7426401104c3b40cc707a/splix-76268c4dd7dbc8218ea7426401104c3b40cc707a.tar.bz2
+hplip 3.25.6 a6af314a7af0572f2ab6967b2fe68760e64d74628ef0e6237f8504d81047edbe hplip-3.25.6.tar.gz https://downloads.sourceforge.net/project/hplip/hplip/3.25.6/hplip-3.25.6.tar.gz
+gutenprint 5.3.5 f5a9f47de28530b1ae2069cfbc647a9a641baeeabe809bb0ef2b3ec5b9668d70 gutenprint-5.3.5.tar.xz https://downloads.sourceforge.net/project/gimp-print/gutenprint-5.3/5.3.5/gutenprint-5.3.5.tar.xz
+escpr 1.8.8 8a0430d9d596fd8efa5dda6467ffa0ac06fd88be16544e486ac68eeb3d74defb epson-inkjet-printer-escpr_1.8.8.orig.tar.gz https://deb.debian.org/debian/pool/main/e/epson-inkjet-printer-escpr/epson-inkjet-printer-escpr_1.8.8.orig.tar.gz
+cups 2.4.14 660288020dd6f79caf799811c4c1a3207a48689899ac2093959d70a3bdcb7699 cups-2.4.14-source.tar.gz https://github.com/OpenPrinting/cups/releases/download/v2.4.14/cups-2.4.14-source.tar.gz
+jbigkit 2.1 de7106b6bfaf495d6865c7dd7ac6ca1381bd12e0d81405ea81e7f2167263d932 jbigkit-2.1.tar.gz https://www.cl.cam.ac.uk/~mgk25/jbigkit/download/jbigkit-2.1.tar.gz
+libjpeg-turbo 3.0.4 99130559e7d62e8d695f2c0eaeef912c5828d5b84a0537dcb24c9678c9d5b76b libjpeg-turbo-3.0.4.tar.gz https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz

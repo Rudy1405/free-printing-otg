@@ -1,0 +1,13 @@
+--- a/cups/thread.c	2026-10-20 11:00:30.865177100 -0600
++++ b/cups/thread.c	2026-10-20 11:00:30.887133700 -0600
+@@ -14,6 +14,10 @@
+ 
+ #include "cups-private.h"
+ #include "thread-private.h"
++#ifdef __ANDROID__
++#  include <signal.h>
++#  define pthread_cancel(t) pthread_kill((t), SIGTERM) /* bionic has no pthread_cancel */
++#endif
+ 
+ 
+ #if defined(HAVE_PTHREAD_H)
