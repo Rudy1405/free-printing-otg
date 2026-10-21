@@ -1,6 +1,7 @@
 local.properties
 .gradle/
-build/
+apps/android/build/
+apps/android/app/build/
 *.apk
 tools/sources/
 tools/build/work/

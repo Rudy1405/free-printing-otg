@@ -1,0 +1,1 @@
+{ global: fpo_entry; local: *; };
