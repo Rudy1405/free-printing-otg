@@ -5,6 +5,6 @@ cd "$(dirname "$0")"
 ABIS="${*:-arm64-v8a armeabi-v7a x86_64}"
 for abi in $ABIS; do
   for e in splix escpr hplip gutenprint; do
-    echo "== $e $abi"; ./build-$e.sh "$abi" 2>&1 | tail -1
+    echo "== $e $abi"; bash ./build-$e.sh "$abi" 2>&1 | tail -1
   done
 done
