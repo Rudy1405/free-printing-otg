@@ -6,7 +6,8 @@ Status of things not done in the first Android build. Source: README "Not done y
 - [ ] Wait for NokoPrint's answer to the permission email (sent by the user). Only if our own packs fail or leave gaps, reuse theirs. See `docs/OWN-PACKS-PLAN.md`.
 - [x] Own driver packs built for 4 engines x 3 ABIs; catalogue covers 3,258 of NokoPrint's 3,268 models (`docs/COVERAGE.md`). Not yet run on a device.
 - [ ] Hardware test of each engine (none run): Epson, HP, Samsung/Xerox and a Gutenprint-only printer, USB and Wi-Fi
-- [ ] Publish `dist/` (GitHub Pages) and set `-PcatalogueUrl`; draft workflow in `.github/workflows/driver-packs.yml` is untested and not pushed
+- [ ] Make the GitHub repo public and enable Pages (the workflow's deploy step fails with 404 until then), then set `-PcatalogueUrl=https://rudy1405.github.io/free-printing-otg`. Decided: only after the hardware tests pass. Repo `Rudy1405/free-printing-otg` is private; CI builds everything and keeps `dist/` as a 30-day artifact.
+- [ ] Choose the app licence and add `LICENSE` (packs are GPL, see `docs/SOURCES.md`). Same gate: after hardware tests, before going public.
 - [ ] 10 Gutenprint models from NokoPrint's `5.2.8-pre1s` that 5.3.5 dropped or renamed (Brother HL-1430/2030/2035, Canon i50/i900, Epson EP 801F, PX 401, Stylus Photo S50, Pro 4600/11600)
 - [ ] SpliX alias PPDs (M2070, M267x/M287x, ML-1670..1866W, ML-191x/252x, ML-331x, SCX-4623, SCX-4x21/4650) are cloned from sibling models; verify on hardware
 - [ ] Newer HP models need HP's closed ImageProcessor, stubbed on ARM: they will not print through hpcups
