@@ -22,7 +22,7 @@ jobs:
       - name: NDK and CMake the app pins
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1" >/dev/null
       - name: Unit tests and debug APK
-        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug || ./gradlew --no-daemon testDebugUnitTest assembleDebug  # one retry: Maven Central sometimes 403s CI runners
       - uses: actions/upload-artifact@v4
         with:
           name: free-printing-otg-debug-apk
