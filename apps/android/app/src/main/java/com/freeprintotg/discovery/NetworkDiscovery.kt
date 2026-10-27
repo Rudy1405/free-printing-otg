@@ -5,7 +5,10 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import com.freeprintotg.*
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
@@ -23,13 +26,7 @@ class NetworkDiscovery(ctx: Context) {
         val lock = wifi.createMulticastLock("fpo-mdns").apply { setReferenceCounted(true); acquire() }
         val listeners = serviceTypes.map { type ->
             val l = object : NsdManager.DiscoveryListener {
-                override fun onServiceFound(s: NsdServiceInfo) {
-                    @Suppress("DEPRECATION")
-                    nsd.resolveService(s, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(s: NsdServiceInfo, code: Int) {}
-                        override fun onServiceResolved(r: NsdServiceInfo) { toPrinter(r, type)?.let { trySend(it) } }
-                    })
-                }
+                override fun onServiceFound(s: NsdServiceInfo) { resolve(s, type, 5) }
                 override fun onServiceLost(s: NsdServiceInfo) {}
                 override fun onDiscoveryStarted(t: String) {}
                 override fun onDiscoveryStopped(t: String) {}
@@ -45,8 +42,25 @@ class NetworkDiscovery(ctx: Context) {
         }
     }
 
+    /** NsdManager resolves one service at a time (pre API 34): FAILURE_ALREADY_ACTIVE just means "try again shortly". */
+    private fun ProducerScope<Printer>.resolve(s: NsdServiceInfo, type: String, triesLeft: Int) {
+        @Suppress("DEPRECATION")
+        nsd.resolveService(s, object : NsdManager.ResolveListener {
+            override fun onResolveFailed(s: NsdServiceInfo, code: Int) {
+                AppLog.d("mDNS resolve failed for ${s.serviceName} ($type), code $code")
+                if (triesLeft > 0) launch { delay(400L * (6 - triesLeft)); resolve(s, type, triesLeft - 1) }
+            }
+            override fun onServiceResolved(r: NsdServiceInfo) {
+                val p = toPrinter(r, type)
+                AppLog.d("mDNS found ${p?.name ?: r.serviceName} $type ${p?.host}:${r.port}")
+                p?.let { trySend(it) }
+            }
+        })
+    }
+
     private fun toPrinter(r: NsdServiceInfo, type: String): Printer? {
-        @Suppress("DEPRECATION") val host = r.host?.hostAddress ?: return null
+        // IPv6 literals need brackets and a scope id that the HTTP/socket code here does not handle; IPv4 is what printers resolve to.
+        @Suppress("DEPRECATION") val host = (r.host as? java.net.Inet4Address)?.hostAddress ?: return null
         val txt = r.attributes.mapValues { it.value?.toString(Charsets.UTF_8).orEmpty() }
         val name = txt["ty"]?.ifBlank { null } ?: r.serviceName
         val formats = txt["pdl"]?.split(',')?.map { it.trim() }?.toSet().orEmpty()

@@ -2,7 +2,7 @@ package com.freeprintotg.driver
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
-import com.freeprintotg.BuildConfig
+import com.freeprintotg.Settings
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -19,11 +19,14 @@ class EngineException(msg: String) : Exception(msg)
  * the catalogue, and runs an engine as a CUPS filter. Unpacked files are made read-only because Android 14
  * refuses to load writable code.
  */
-class EngineStore(private val ctx: Context, private val baseUrl: String = BuildConfig.CATALOGUE_URL.trimEnd('/')) {
+class EngineStore(private val ctx: Context, private val baseUrl: String = Settings.catalogueUrl(ctx).trimEnd('/')) {
     private val root get() = File(ctx.filesDir, "engines").apply { mkdirs() }
     private val cacheFile get() = File(root, "catalogue.json")
 
     fun configured() = baseUrl.isNotBlank()
+
+    /** Forget the cached catalogue, e.g. after the server URL changed. */
+    fun clearCache() { cacheFile.delete() }
 
     /** Cached catalogue if present, else downloads it. */
     fun catalogue(refresh: Boolean = false): Catalogue {

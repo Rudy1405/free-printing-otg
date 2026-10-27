@@ -27,12 +27,13 @@ Status of things not done in the first Android build. Source: README "Not done y
 ## Discovery and transport
 - [ ] Canon BJNP, SNMP, WS-Discovery and Bluetooth discovery
 - [ ] SMB / Windows shared printers
-- [ ] Manual add by IP address
+- [x] Manual add by IP address (IPP 631 / raw 9100)
 - [ ] IPP-over-USB tested on hardware (currently experimental)
 
 ## Platform
+- [x] In-app log with Copy, editable driver-server URL, USB permission asked on launch (for hardware tests, see `docs/HARDWARE-TEST.md`)
 - [ ] Android system PrintService (print from any app's Print menu)
 - [ ] Test on real printers: Wi-Fi IPP, raw 9100, USB bulk with OTG cable
-- [ ] Gradle wrapper checked in
+- [x] Gradle wrapper checked in
 - [ ] App icon, localization (Spanish first), settings screen
 - [ ] iOS and desktop apps under `apps/`

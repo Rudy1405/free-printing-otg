@@ -26,7 +26,8 @@ private val ENGINE_DPI = mapOf("escpr" to 360, "hplip" to 600, "splix" to 600, "
 
 class PrintJob(private val ctx: Context, private val store: DriverStore, private val engines: EngineStore = EngineStore(ctx)) {
 
-    suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, onStatus: (String) -> Unit) {
+    suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, status: (String) -> Unit) {
+        val onStatus: (String) -> Unit = { AppLog.d(it); status(it) }
         val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
         var printer = selected
         if (selected.usb != null) {
@@ -36,6 +37,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
             printer = UsbDiscovery.printersOf(usb, dev).firstOrNull { it.id == selected.id } ?: selected
         }
         val ref = printer.usb
+        AppLog.d("Printer: ${printer.name} via ${printer.transport} id=${printer.deviceId?.raw ?: "none"}")
 
         val resolver = DriverResolver(store.bundled())
         for (uri in uris) {
@@ -65,9 +67,13 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                 }
 
                 onStatus("Rendering…")
-                val dpi = if (plan.language == Language.POSTSCRIPT) 150 else opt.dpi
+                val dpi = when {
+                    useEngine -> ENGINE_DPI[engine!!.entry.engine] ?: opt.dpi
+                    plan.language == Language.POSTSCRIPT -> 150
+                    else -> opt.dpi
+                }
                 val doc = DocumentRenderer.open(ctx, uri, opt.paper, dpi)
-                val (bytes, mime) = encode(plan.language, doc, opt, dpi)
+                val (bytes, mime) = if (useEngine) runEngine(engine!!, doc, opt, dpi, onStatus) else encode(plan.language, doc, opt, dpi)
 
                 onStatus("Sending ${bytes.size / 1024} KiB to ${printer.name}…")
                 if (useEngine) {
@@ -101,7 +107,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
     private fun runEngine(m: Catalogue.Match, doc: RenderedDoc, o: PrintOptions, dpi: Int, onStatus: (String) -> Unit): Pair<ByteArray, String> {
         val cat = engines.catalogue()
         val pack = cat.engines[m.entry.engine] ?: error("Catalogue has no engine ${m.entry.engine}")
-        if (!engines.isInstalled(pack)) onStatus("Downloading ${pack.id} driver�")
+        if (!engines.isInstalled(pack)) onStatus("Downloading ${pack.id} driver…")
         val ppd = engines.ensurePpd(m.entry)
         val raster = Encoders.pwgRaster(doc.pages, o.paper, dpi, o.color, o.duplex, o.copies)
         val options = buildString {
@@ -109,7 +115,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
             if (!o.color) append(" print-color-mode=monochrome ColorModel=Gray")
             if (o.duplex) append(" sides=two-sided-long-edge")
         }
-        onStatus("Running ${pack.id}�")
+        onStatus("Running ${pack.id}…")
         return engines.run(pack, ppd, raster, doc.name, o.copies, options) to "application/octet-stream"
     }
 

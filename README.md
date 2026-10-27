@@ -14,11 +14,11 @@ docs/RE-FINDINGS.md      evidence of how NokoPrint 5.28.4 works
 Needs JDK 17+ and the Android SDK (platform 35). From `apps/android`:
 
 ```
-gradle testDebugUnitTest assembleDebug
+./gradlew testDebugUnitTest assembleDebug
 ```
 
-Set `sdk.dir` in `apps/android/local.properties`. There is no Gradle wrapper checked in yet; run
-`gradle wrapper` once with a local Gradle 9.x.
+Set `sdk.dir` in `apps/android/local.properties`. Use the checked-in wrapper: `./gradlew testDebugUnitTest assembleDebug`.
+CI also builds the APK (`android` workflow). Testing on a device: see `docs/HARDWARE-TEST.md`.
 
 ## What works
 
@@ -32,6 +32,6 @@ Set `sdk.dir` in `apps/android/local.properties`. There is no Gradle wrapper che
 ## Not done yet
 
 - Word/Excel/PowerPoint: needs a document converter; `UNSUPPORTED` is reported today.
-- Native driver packs (Gutenprint, HPLIP, Epson ESC/P-R, SpliX) for USB-only printers. Pack download and hash check exist; the packs and loader do not.
+- Native driver packs (Gutenprint, HPLIP, Epson ESC/P-R, SpliX) are built and wired (download, hash check, JNI runner) but have never run on a device. They are fetched from a driver server (set in the app).
 - HP Smart Install firmware push, Canon BJNP, SNMP and Bluetooth discovery, Android system `PrintService`, print preview, page range.
 - iOS/desktop apps (the `apps/` folder is ready for them).
