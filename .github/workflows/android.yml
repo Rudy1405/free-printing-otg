@@ -6,6 +6,8 @@ on:
     paths: ["apps/android/**", ".github/workflows/android.yml"]
   pull_request:
     paths: ["apps/android/**"]
+env:
+  CATALOGUE_URL: https://rudy1405.github.io/free-printing-otg
 jobs:
   apk:
     runs-on: ubuntu-24.04
@@ -22,7 +24,7 @@ jobs:
       - name: NDK and CMake the app pins
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1" >/dev/null
       - name: Unit tests and debug APK
-        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug || ./gradlew --no-daemon testDebugUnitTest assembleDebug  # one retry: Maven Central sometimes 403s CI runners
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug -PcatalogueUrl=$CATALOGUE_URL || ./gradlew --no-daemon testDebugUnitTest assembleDebug -PcatalogueUrl=$CATALOGUE_URL  # one retry: Maven Central sometimes 403s CI runners
       - uses: actions/upload-artifact@v4
         with:
           name: free-printing-otg-debug-apk
