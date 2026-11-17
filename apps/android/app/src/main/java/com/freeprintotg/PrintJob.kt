@@ -24,6 +24,13 @@ data class PrintOptions(
  */
 private val ENGINE_DPI = mapOf("escpr" to 360, "hplip" to 600, "splix" to 600, "gutenprint" to 360)
 
+/** Languages the app produces completely by itself: no engine pack is looked up for them. */
+private val SELF_SUFFICIENT = setOf(
+    Language.PDF, Language.PWG_RASTER, Language.POSTSCRIPT, Language.URF,
+    Language.ESC_POS, Language.TSPL, Language.ZPL,
+)
+private const val RAW = "application/octet-stream"
+
 class PrintJob(private val ctx: Context, private val store: DriverStore, private val engines: EngineStore = EngineStore(ctx)) {
 
     suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, status: (String) -> Unit) {
@@ -39,7 +46,13 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         val ref = printer.usb
         AppLog.d("Printer: ${printer.name} via ${printer.transport} id=${printer.deviceId?.raw ?: "none"}")
 
-        val resolver = DriverResolver(store.bundled())
+        val quirks = store.quirks()
+        val quirk = quirks.forPrinter(printer)
+        quirk?.let { AppLog.d("Quirk: ${it.id}") }
+        if (printer.transport == Transport.USB_BULK && quirk?.firmwareUpload != null) {
+            printer = FirmwareUpload.ensure(ctx, usb, printer, quirk.firmwareUpload, onStatus)
+        }
+        val resolver = DriverResolver(store.bundled(), quirks = quirks)
         for (uri in uris) {
             // IPP printers tell us exactly what they accept; ask once per job.
             var ippClient: IppClient? = null
@@ -61,28 +74,35 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                 val engine = if (engines.configured()) chooseEngine(printer, plan, onStatus) else null
                 if (engine != null && engine.entry.engine == "builtin-ps") plan = Plan(Language.POSTSCRIPT, null, "Generic PostScript")
                 val useEngine = engine != null && engine.entry.engine != "builtin-ps"
+                if (!useEngine) plan.blocker?.let { error(it) }
                 onStatus(if (useEngine) "Driver: ${engine!!.entry.model ?: engine.entry.engine} (${engine.entry.engine})" else plan.note)
                 plan.driver?.takeIf { !store.isInstalled(it) }?.let {
                     onStatus("Downloading driver ${it.name}…"); store.install(it)
                 }
 
+                val o = opt.copy(paper = mediaFor(plan, useEngine, opt.paper, quirk?.mediaDefault))
+                if (o.paper != opt.paper) onStatus("Using ${o.paper.label} (pick another size to change it)")
+
                 onStatus("Rendering…")
                 val dpi = when {
-                    useEngine -> ENGINE_DPI[engine!!.entry.engine] ?: opt.dpi
+                    useEngine -> ENGINE_DPI[engine!!.entry.engine] ?: o.dpi
                     plan.language == Language.POSTSCRIPT -> 150
-                    else -> opt.dpi
+                    else -> plan.language.defaultDpi ?: o.dpi
                 }
-                val doc = DocumentRenderer.open(ctx, uri, opt.paper, dpi)
-                val (bytes, mime) = if (useEngine) runEngine(engine!!, doc, opt, dpi, onStatus) else encode(plan.language, doc, opt, dpi)
+                val doc = DocumentRenderer.open(ctx, uri, o.paper, dpi)
+                // PJL lets a multi-language printer switch to PCL/PostScript on its own; not used over IPP.
+                val pjl = ippClient == null &&
+                    (quirk?.needsPjl == true || printer.deviceId?.commands?.any { it.equals("PJL", ignoreCase = true) } == true)
+                val (bytes, mime) = if (useEngine) runEngine(engine!!, doc, o, dpi, onStatus) else encode(plan.language, doc, o, dpi, pjl)
 
                 onStatus("Sending ${bytes.size / 1024} KiB to ${printer.name}…")
                 if (useEngine) {
                     // engine output is the printer's own language: raw port, never IPP document-format negotiation
-                    openSink(printer.takeIf { it.transport != Transport.IPP } ?: printer.copy(transport = Transport.RAW_9100, port = 9100), usb).use { it.write(bytes) }
+                    openSink(printer.takeIf { it.transport != Transport.IPP } ?: printer.copy(transport = Transport.RAW_9100, port = 9100), usb, quirk).use { it.write(bytes) }
                 } else if (ippClient != null) {
-                    ippClient.printJob(bytes, mime, doc.name, opt.copies, opt.duplex, opt.color)
+                    ippClient.printJob(bytes, mime, doc.name, o.copies, o.duplex, o.color)
                 } else {
-                    openSink(printer, usb).use { it.write(bytes) }
+                    openSink(printer, usb, quirk).use { it.write(bytes) }
                 }
                 onStatus("Sent ${doc.name}")
             } finally {
@@ -96,11 +116,11 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
      * over the generic PCL guess; a Generic PPD is used only for [Plan.fallback].
      */
     private fun chooseEngine(printer: Printer, plan: Plan, onStatus: (String) -> Unit): Catalogue.Match? {
-        val driverless = plan.driver == null && !plan.fallback && plan.language in setOf(Language.PDF, Language.PWG_RASTER, Language.POSTSCRIPT)
+        val driverless = plan.driver == null && !plan.fallback && plan.language in SELF_SUFFICIENT
         if (driverless || plan.driver != null) return null
         val cat = runCatching { engines.catalogue() }.recoverCatching { engines.catalogue(refresh = true) }
             .onFailure { onStatus("Driver catalogue unavailable: ${it.message}") }.getOrNull() ?: return null
-        val m = cat.match(printer.deviceId, printer.name) ?: return null
+        val m = cat.match(printer.deviceId, printer.name, PrinterIdentity.of(printer)) ?: return null
         return if (m.quality == Catalogue.Quality.GENERIC && !plan.fallback) null else m
     }
 
@@ -119,15 +139,29 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         return engines.run(pack, ppd, raster, doc.name, o.copies, options) to "application/octet-stream"
     }
 
-    private fun encode(lang: Language, doc: RenderedDoc, o: PrintOptions, dpi: Int): Pair<ByteArray, String> = when (lang) {
-        Language.PDF -> (doc.pdfBytes ?: Encoders.pdf(doc.pages, o.paper)) to Pdl.PDF.mime
-        Language.PWG_RASTER -> Encoders.pwgRaster(doc.pages, o.paper, dpi, o.color, o.duplex, o.copies) to Pdl.PWG_RASTER.mime
-        Language.POSTSCRIPT -> Encoders.postScript(doc.pages, o.paper) to Pdl.POSTSCRIPT.mime
-        Language.PCL_MONO -> Encoders.pclMono(doc.pages, o.paper, dpi, o.copies) to Pdl.PCL.mime
+    /** Receipt/label languages on a sheet size make no sense: switch to the usual roll or label. */
+    private fun mediaFor(plan: Plan, useEngine: Boolean, chosen: PaperSize, quirkDefault: PaperSize?): PaperSize = when {
+        useEngine || chosen.kind != MediaKind.SHEET -> chosen
+        plan.language.isLabelOrReceipt && quirkDefault != null -> quirkDefault
+        plan.language == Language.ESC_POS -> PaperSize.ROLL_58  // 384 dots also fit 80 mm printers
+        plan.language == Language.TSPL || plan.language == Language.ZPL -> PaperSize.LABEL_50X25
+        else -> chosen
     }
 
-    private fun openSink(p: Printer, usb: UsbManager): PrintSink = when (p.transport) {
-        Transport.USB_BULK -> UsbBulkSink(usb, p.usb!!)
+    private fun encode(lang: Language, doc: RenderedDoc, o: PrintOptions, dpi: Int, pjl: Boolean): Pair<ByteArray, String> = when (lang) {
+        Language.PDF -> (doc.pdfBytes ?: Encoders.pdf(doc.pages, o.paper)) to Pdl.PDF.mime
+        Language.PWG_RASTER -> Encoders.pwgRaster(doc.pages, o.paper, dpi, o.color, o.duplex, o.copies) to Pdl.PWG_RASTER.mime
+        Language.POSTSCRIPT -> Encoders.postScript(doc.pages, o.paper).let { if (pjl) RasterEncoders.pjl(it, "POSTSCRIPT") else it } to Pdl.POSTSCRIPT.mime
+        Language.PCL_MONO -> Encoders.pclMono(doc.pages, o.paper, dpi, o.copies).let { if (pjl) RasterEncoders.pjl(it, "PCL") else it } to Pdl.PCL.mime
+        Language.PCL_XL -> RasterEncoders.pclXl(doc.pages.asRasters(), o.paper, dpi, o.copies) to Pdl.PCLXL.mime
+        Language.URF -> RasterEncoders.urf(doc.pages.asRasters(), dpi, o.color, o.duplex) to Pdl.URF.mime
+        Language.ESC_POS -> RasterEncoders.escPos(doc.pages.asRasters(), o.copies) to RAW
+        Language.TSPL -> RasterEncoders.tspl(doc.pages.asRasters(), o.paper.widthMm, o.paper.heightMm, o.copies) to RAW
+        Language.ZPL -> RasterEncoders.zpl(doc.pages.asRasters(), o.copies) to RAW
+    }
+
+    private fun openSink(p: Printer, usb: UsbManager, quirk: Quirk?): PrintSink = when (p.transport) {
+        Transport.USB_BULK -> UsbBulkSink(usb, p.usb!!, drainIn = quirk?.drainBulkIn == true)
         Transport.RAW_9100 -> RawSocketSink(p.host!!, p.port.takeIf { it > 0 } ?: 9100)
         Transport.LPD -> LpdSink(p.host!!, p.port)
         else -> error("No raw sink for ${p.transport}")

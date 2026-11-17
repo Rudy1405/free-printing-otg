@@ -13,3 +13,6 @@ nokoprint-*.apk
 *.jks
 *.keystore
 .cxx/
+
+# ESP32-S3 printer bridge: local hardware/firmware workspace, not published
+esp32-bridge/

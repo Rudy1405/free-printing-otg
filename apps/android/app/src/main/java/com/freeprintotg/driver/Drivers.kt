@@ -8,8 +8,19 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
-/** Output language a driver produces. Each maps to one encoder in [com.freeprintotg.render.Encoders]. */
-enum class Language { PDF, PWG_RASTER, POSTSCRIPT, PCL_MONO }
+/**
+ * Output language a driver produces. Each maps to one encoder in [com.freeprintotg.render.Encoders] or
+ * [com.freeprintotg.render.RasterEncoders].
+ */
+enum class Language(val defaultDpi: Int? = null) {
+    PDF, PWG_RASTER, POSTSCRIPT, PCL_MONO,
+    PCL_XL(300), URF,
+    /** Receipt and label printers are almost all 8 dots/mm. */
+    ESC_POS(203), TSPL(203), ZPL(203),
+    ;
+
+    val isLabelOrReceipt get() = this == ESC_POS || this == TSPL || this == ZPL
+}
 
 data class DriverEntry(
     val id: String,
@@ -24,42 +35,114 @@ data class DriverEntry(
     val builtin get() = url == null
 }
 
-/** [fallback] marks a last-resort guess; the caller may replace it with an engine pack from the hosted catalogue. */
-data class Plan(val language: Language, val driver: DriverEntry?, val note: String, val fallback: Boolean = false)
+/**
+ * [fallback] marks a last-resort guess; the caller may replace it with an engine pack from the hosted catalogue.
+ * [blocker] is set when [language] must not be sent as is: only an engine pack can print, and without one the job
+ * fails with this message instead of printing garbage.
+ */
+data class Plan(
+    val language: Language,
+    val driver: DriverEntry?,
+    val note: String,
+    val fallback: Boolean = false,
+    val blocker: String? = null,
+)
+
+private val ENGINE_ONLY = setOf(PdlFamily.ESCPR, PdlFamily.ESCP2, PdlFamily.SPL)
+
+/** Usual language per manufacturer, used only when the printer names no language and no model matches. */
+private val PCL_VENDORS = setOf(
+    "HP", "Brother", "Kyocera", "Lexmark", "Ricoh", "OKI", "Konica Minolta", "Sharp",
+    "Xerox", "Fuji Xerox", "Dell", "Toshiba", "Samsung", "Pantum",
+)
+private val INKJET_VENDORS = setOf("Epson", "Canon")
+/** Receipt printer makers whose models accept ESC/POS (Star models in their ESC/POS emulation). */
+private val RECEIPT_VENDORS = setOf("Star", "Citizen", "Bixolon")
 
 /**
- * Chooses how to talk to a printer. Order mirrors what NokoPrint does with its driver tables
- * (core/b.java: MFG+MDL rows grouped per driver library) with driverless formats tried first:
- *  1. Format the printer advertises: PDF, then PWG raster (IPP Everywhere / AirPrint class).
- *  2. Manifest entry matching IEEE-1284 MFG/MDL: a builtin language or a downloadable pack.
- *  3. IEEE-1284 CMD list (PDF, POSTSCRIPT, PWGRaster, PCL).
- *  4. Generic PCL fallback.
+ * Chooses how to talk to any printer from what it reports, never from a hard-coded model
+ * (see docs/GENERIC-PRINTING-PLAN.md section 3):
+ *  0. A language saved for this printer ([learned], keyed by [PrinterIdentity.key]); a [Quirk.unsupported] printer stops here.
+ *  1. Format the printer advertises: PDF, then PWG raster (IPP Everywhere / AirPrint class); then [Quirk.forceLanguage].
+ *  2. Manifest entry matching the normalised manufacturer / model / command set.
+ *  3. Language families in the IEEE-1284 CMD list.
+ *  4. Manufacturer alone (Device ID, USB vendor id or name): its usual language.
+ *  5. Unknown: generic PCL, flagged as a guess.
+ * Printers whose only language is closed or not encodable yet get a [Plan.blocker] instead of a wrong guess.
  */
-class DriverResolver(private val entries: List<DriverEntry>) {
+class DriverResolver(
+    private val entries: List<DriverEntry>,
+    private val learned: Map<String, Language> = emptyMap(),
+    private val quirks: Quirks = Quirks.EMPTY,
+) {
 
     fun resolve(printer: Printer, advertised: Set<String>): Plan {
+        val who = PrinterIdentity.of(printer)
+        who.key?.let(learned::get)?.let { return Plan(it, null, "Saved setting for this printer: $it") }
+        val quirk = quirks.forPrinter(printer)
+        quirk?.unsupported?.let { return unsupported(it) }
+
         val fmts = (advertised + printer.formats).map { it.lowercase() }.toSet()
         if ("application/pdf" in fmts) return Plan(Language.PDF, null, "Driverless PDF")
         if ("image/pwg-raster" in fmts) return Plan(Language.PWG_RASTER, null, "Driverless PWG raster")
+        if ("image/urf" in fmts) return Plan(Language.URF, null, "Driverless Apple raster (URF)")
 
-        val id = printer.deviceId
-        entries.firstOrNull { matches(it, id) }?.let { return Plan(it.language, it, "Driver: ${it.name}") }
+        quirk?.forceLanguage?.let { return Plan(it, null, "Printer setting (${quirk.id}): $it") }
 
-        val cmds = id?.commands.orEmpty().map { it.uppercase() }
+        entries.firstOrNull { matches(it, who, printer.deviceId) }?.let { return Plan(it.language, it, "Driver: ${it.name}") }
+
+        byLanguage(who)?.let { return it }
+        byVendor(who)?.let { return it }
+        return Plan(Language.PCL_MONO, null, "Unknown printer: generic PCL fallback (may not work)", fallback = true)
+    }
+
+    private fun byLanguage(who: PrinterIdentity): Plan? {
+        val f = who.families
         return when {
-            cmds.any { it == "PDF" } -> Plan(Language.PDF, null, "Printer reports PDF")
-            cmds.any { it.startsWith("PWG") } -> Plan(Language.PWG_RASTER, null, "Printer reports PWG raster")
-            cmds.any { it == "POSTSCRIPT" || it == "PS" || it.startsWith("POSTSCRIPT") } -> Plan(Language.POSTSCRIPT, null, "Printer reports PostScript")
-            cmds.any { it.startsWith("PCL") } -> Plan(Language.PCL_MONO, null, "Generic PCL driver", fallback = true)
-            else -> Plan(Language.PCL_MONO, null, "Unknown printer: generic PCL fallback (may not work)", fallback = true)
+            PdlFamily.PDF in f -> Plan(Language.PDF, null, "Printer reports PDF")
+            PdlFamily.PWG in f -> Plan(Language.PWG_RASTER, null, "Printer reports PWG raster")
+            PdlFamily.POSTSCRIPT in f -> Plan(Language.POSTSCRIPT, null, "Printer reports PostScript")
+            PdlFamily.PCL5 in f || PdlFamily.PCL3GUI in f ->
+                Plan(Language.PCL_MONO, null, "Generic PCL driver", fallback = true)
+            PdlFamily.PCLXL in f -> Plan(Language.PCL_XL, null, "Generic PCL 6 (PCL XL) driver", fallback = true)
+            PdlFamily.ESCPR in f || PdlFamily.ESCP2 in f || PdlFamily.SPL in f ->
+                needsEngine("Printer speaks ${f.first { it in ENGINE_ONLY }}: needs a driver pack")
+            PdlFamily.TSPL in f -> Plan(Language.TSPL, null, "Label printer: TSPL")
+            PdlFamily.ZPL in f -> Plan(Language.ZPL, null, "Label printer: ZPL")
+            PdlFamily.ESCPOS in f -> Plan(Language.ESC_POS, null, "Receipt printer: ESC/POS")
+            PdlFamily.EPL in f -> unsupported("Label printer that only speaks EPL: not supported yet")
+            PdlFamily.CLOSED_HOST_BASED in f ->
+                unsupported("This printer only works with its Windows driver (closed host-based language)")
+            else -> null
         }
     }
 
-    private fun matches(e: DriverEntry, id: DeviceId?): Boolean {
-        if (id == null) return false
-        if (e.mfg.isNotEmpty() && e.mfg.none { it.equals(id.mfg, ignoreCase = true) }) return false
-        if (e.mdlRegex != null && id.mdl?.let(e.mdlRegex::containsMatchIn) != true) return false
-        if (e.commands.isNotEmpty() && e.commands.none { c -> id.commands.any { it.equals(c, true) } }) return false
+    private fun byVendor(who: PrinterIdentity): Plan? {
+        val v = who.vendor ?: return null
+        return when (v) {
+            in PCL_VENDORS -> Plan(Language.PCL_MONO, null, "Probably PCL ($v)", fallback = true)
+            in INKJET_VENDORS -> needsEngine("$v printer: needs a driver pack")
+            "Zebra" -> Plan(Language.ZPL, null, "Probably ZPL ($v)")
+            "TSC" -> Plan(Language.TSPL, null, "Probably TSPL ($v)")
+            in RECEIPT_VENDORS -> Plan(Language.ESC_POS, null, "Probably ESC/POS ($v)")
+            else -> null
+        }
+    }
+
+    private fun needsEngine(msg: String) = Plan(Language.PCL_MONO, null, msg, fallback = true, blocker = msg)
+    private fun unsupported(msg: String) = Plan(Language.PCL_MONO, null, msg, blocker = msg)
+
+    private fun matches(e: DriverEntry, who: PrinterIdentity, id: DeviceId?): Boolean {
+        if (e.mfg.isNotEmpty()) {
+            val vendor = who.vendor ?: id?.mfg ?: return false
+            if (e.mfg.none { (Vendors.canonical(it) ?: it).equals(vendor, ignoreCase = true) }) return false
+        }
+        if (e.mdlRegex != null && listOfNotNull(id?.mdl, who.model).none(e.mdlRegex::containsMatchIn)) return false
+        if (e.commands.isNotEmpty()) {
+            val raw = id?.commands.orEmpty()
+            val sameToken = e.commands.any { c -> raw.any { it.equals(c, true) } }
+            if (!sameToken && Languages.families(e.commands).intersect(who.families).isEmpty()) return false
+        }
         return e.mfg.isNotEmpty() || e.mdlRegex != null
     }
 
@@ -89,6 +172,11 @@ class DriverStore(private val ctx: Context) {
 
     fun bundled(): List<DriverEntry> =
         DriverResolver.parse(ctx.assets.open("drivers.json").bufferedReader().use { it.readText() })
+
+    /** Bundled `quirks.json`; an unreadable file must never stop printing, so it degrades to no quirks. */
+    fun quirks(): Quirks = runCatching {
+        Quirks.parse(ctx.assets.open("quirks.json").bufferedReader().use { it.readText() })
+    }.onFailure { com.freeprintotg.AppLog.d("quirks.json unreadable: ${it.message}") }.getOrDefault(Quirks.EMPTY)
 
     fun fetchManifest(url: String): List<DriverEntry> =
         DriverResolver.parse(URL(url).openStream().bufferedReader().use { it.readText() })

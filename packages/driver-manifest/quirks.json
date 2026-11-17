@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "quirks": [
+    {
+      "id": "hp-lj1000",
+      "note": "HP LaserJet 1000: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:0517"] },
+      "firmware_upload": "sihp1000.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-lj1005",
+      "note": "HP LaserJet 1005: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:1317"] },
+      "firmware_upload": "sihp1005.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-lj1018",
+      "note": "HP LaserJet 1018: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:4117"] },
+      "firmware_upload": "sihp1018.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-lj1020",
+      "note": "HP LaserJet 1020 / 1022: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:2b17"] },
+      "firmware_upload": "sihp1020.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-ljp1005",
+      "note": "HP LaserJet P1005: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:3d17"] },
+      "firmware_upload": "sihpP1005.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-ljp1006",
+      "note": "HP LaserJet P1006: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:3e17"] },
+      "firmware_upload": "sihpP1006.dl",
+      "verified": false
+    },
+    {
+      "id": "hp-ljp1505",
+      "note": "HP LaserJet P1505: host-based, firmware lost at every power-off",
+      "match": { "usb": ["03f0:3f17"] },
+      "firmware_upload": "sihpP1505.dl",
+      "verified": false
+    },
+    {
+      "id": "canon-capt",
+      "note": "Canon LBP CAPT models: closed host-based language, no open driver",
+      "match": { "mfg": ["Canon"], "mdl": "^LBP ?(2900|3000|3010|3050|3100|3150|6000|6018|6020|6030)\\b" },
+      "unsupported": "Canon CAPT printers only work with Canon's own Windows/Linux driver",
+      "verified": false
+    }
+  ]
+}

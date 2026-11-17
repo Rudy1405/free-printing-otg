@@ -10,6 +10,8 @@ enum class Pdl(val mime: String) {
     JPEG("image/jpeg"),
     POSTSCRIPT("application/postscript"),
     PCL("application/vnd.hp-PCL"),
+    PCLXL("application/vnd.hp-PCLXL"),
+    URF("image/urf"),
 }
 
 /** IEEE-1284 device id (MFG / MDL / CMD), read from a USB printer or advertised over mDNS. */
@@ -24,6 +26,20 @@ data class DeviceId(val mfg: String?, val mdl: String?, val commands: List<Strin
             val mdl = kv["MDL"] ?: kv["MODEL"]
             val cmd = (kv["CMD"] ?: kv["COMMAND SET"] ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }
             return DeviceId(mfg, mdl, cmd, raw)
+        }
+
+        /**
+         * Bonjour printing TXT keys `usb_MFG`, `usb_MDL`, `usb_CMD` (print servers, the ESP32 bridge, many printers).
+         * Key case varies between advertisers, so lookup ignores it. Null when none is present.
+         */
+        fun fromTxt(txt: Map<String, String>): DeviceId? {
+            val lower = txt.mapKeys { it.key.lowercase() }
+            val mfg = lower["usb_mfg"]?.trim()?.ifEmpty { null }
+            val mdl = lower["usb_mdl"]?.trim()?.ifEmpty { null }
+            val cmd = lower["usb_cmd"]?.trim()?.ifEmpty { null }
+            if (mfg == null && mdl == null && cmd == null) return null
+            val raw = listOfNotNull(mfg?.let { "MFG:$it" }, mdl?.let { "MDL:$it" }, cmd?.let { "CMD:$it" }).joinToString(";", postfix = ";")
+            return parse(raw)
         }
     }
 }

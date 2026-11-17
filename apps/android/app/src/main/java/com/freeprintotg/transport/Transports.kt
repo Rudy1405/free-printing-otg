@@ -82,16 +82,23 @@ object UsbPermission {
  * openDevice, claimInterface, 16 KiB bulk chunks, and a zero-length packet when the last
  * chunk ends on a max-packet boundary so the printer sees end-of-transfer.
  */
-class UsbBulkSink(usb: UsbManager, ref: UsbEndpointRef) : PrintSink {
+class UsbBulkSink(usb: UsbManager, ref: UsbEndpointRef, drainIn: Boolean = false) : PrintSink {
     private val dev: UsbDevice = usb.deviceList[ref.deviceName] ?: error("USB printer unplugged")
     private val itf: UsbInterface = dev.getInterface(ref.interfaceIndex)
     private val out: UsbEndpoint = itf.getEndpoint(ref.outEndpointIndex)
     private val conn: UsbDeviceConnection = usb.openDevice(dev) ?: error("Cannot open USB device (permission?)")
     private var lastFull = false
+    @Volatile private var open = true
 
     init {
         if (!conn.claimInterface(itf, true)) { conn.close(); error("Cannot claim USB printer interface") }
         if (itf.alternateSetting > 0) conn.setInterface(itf)
+        // Quirk drain_bulk_in: some printers stop accepting data while their status replies go unread.
+        val inEp = ref.inEndpointIndex?.let(itf::getEndpoint)
+        if (drainIn && inEp != null) Thread({
+            val buf = ByteArray(inEp.maxPacketSize.coerceAtLeast(64) * 8)
+            while (open) conn.bulkTransfer(inEp, buf, buf.size, 200)
+        }, "usb-drain-in").apply { isDaemon = true }.start()
     }
 
     override fun write(data: ByteArray, off: Int, len: Int) {
@@ -109,6 +116,7 @@ class UsbBulkSink(usb: UsbManager, ref: UsbEndpointRef) : PrintSink {
     override fun close() {
         if (lastFull) conn.bulkTransfer(out, ByteArray(0), 0, 0, 1000)
         Thread.sleep(500) // let the printer drain before the interface is released
+        open = false
         conn.releaseInterface(itf)
         conn.close()
     }

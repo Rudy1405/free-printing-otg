@@ -4,6 +4,18 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfDocument
 import java.io.ByteArrayOutputStream
 
+/** Reads an Android bitmap row by row for the pure encoders in [RasterEncoders]. */
+fun Bitmap.asRaster(): Raster = object : Raster {
+    override val width get() = this@asRaster.width
+    override val height get() = this@asRaster.height
+    override fun row(y: Int, out: IntArray) = getPixels(out, 0, width, 0, y, width, 1)
+}
+
+/** Raster sequence over rendered bitmaps; each bitmap is recycled once the next one is requested or the end is reached. */
+fun Sequence<Bitmap>.asRasters(): Sequence<Raster> = sequence {
+    for (bmp in this@asRasters) { yield(bmp.asRaster()); bmp.recycle() }
+}
+
 /** Page-description encoders. Each takes rendered pages and returns the byte stream a printer language expects. */
 object Encoders {
 
@@ -58,7 +70,7 @@ object Encoders {
             fun flush() {
                 val p = prev ?: return
                 out.write(repeat - 1)
-                packRow(p, if (color) 3 else 1, out)
+                RasterCodec.packPixels(p, if (color) 3 else 1, out)
             }
             for (y in 0 until h) {
                 bmp.getPixels(px, 0, w, 0, y, w, 1)
@@ -77,26 +89,6 @@ object Encoders {
             bmp.recycle()
         }
         return out.toByteArray()
-    }
-
-    /** PWG row compression: n in 0..127 repeats the next pixel n+1 times; 257-n in 2..128 copies literal pixels. */
-    private fun packRow(row: ByteArray, bpp: Int, out: ByteArrayOutputStream) {
-        val n = row.size / bpp
-        fun same(a: Int, b: Int): Boolean { for (k in 0 until bpp) if (row[a * bpp + k] != row[b * bpp + k]) return false; return true }
-        var i = 0
-        while (i < n) {
-            var run = 1
-            while (i + run < n && run < 128 && same(i, i + run)) run++
-            if (run >= 2 || i == n - 1) {
-                out.write(run - 1); out.write(row, i * bpp, bpp); i += run
-            } else {
-                var lit = 1
-                while (i + lit < n && lit < 128 && !(i + lit + 1 < n && same(i + lit, i + lit + 1))) lit++
-                if (lit == 1) { out.write(0); out.write(row, i * bpp, bpp) }
-                else { out.write(257 - lit); out.write(row, i * bpp, lit * bpp) }
-                i += lit
-            }
-        }
     }
 
     /** Monochrome PCL 5 raster (HP LaserJet compatible and many clones). Bayer-dithered 1 bit/pixel. */

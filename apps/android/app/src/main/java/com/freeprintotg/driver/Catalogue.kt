@@ -48,20 +48,30 @@ class Catalogue(val baseUrl: String, val engines: Map<String, EnginePack>, val p
         listOfNotNull(p.model, p.mdl, listOfNotNull(p.mfg, p.mdl).joinToString(" ").ifBlank { null })
             .map(::norm).filter { it.length >= 3 }.toSet()
 
-    fun match(id: DeviceId?, displayName: String): Match? {
+    /**
+     * [who] adds the normalised spelling ("Hewlett-Packard ... Series" -> "HP ...") so a printer matches whichever
+     * way it writes its name; without it only the raw Device ID and display name are tried.
+     */
+    fun match(id: DeviceId?, displayName: String, who: PrinterIdentity? = null): Match? {
         val mdl = id?.mdl?.takeIf { it.isNotBlank() }
         val candidates = buildList {
             if (mdl != null) {
                 add(norm("${id.mfg.orEmpty()} $mdl") to Quality.DEVICE_ID)
                 add(norm(mdl) to Quality.DEVICE_ID)
             }
+            who?.model?.let { m ->
+                val q = if (mdl != null) Quality.DEVICE_ID else Quality.MODEL_NAME
+                who.vendor?.let { add(norm("$it $m") to q) }
+                add(norm(m) to q)
+            }
             add(norm(displayName) to Quality.MODEL_NAME)
         }
-        for ((key, q) in candidates) {
+        val vendor = who?.vendor ?: id?.mfg
+        for ((key, q) in candidates.distinctBy { it.first }) {
             val hits = byKey[key] ?: continue
-            return Match(rank(hits, id?.mfg), q)
+            return Match(rank(hits, vendor), q)
         }
-        return generic(id)
+        return generic(id, who)
     }
 
     private fun rank(hits: List<CatalogueEntry>, mfg: String?): CatalogueEntry {
@@ -71,18 +81,21 @@ class Catalogue(val baseUrl: String, val engines: Map<String, EnginePack>, val p
 
     private fun enginePriority(e: String) = when (e) { "escpr" -> 0; "hplip" -> 1; "splix" -> 2; "gutenprint" -> 3; else -> 4 }
 
-    /** No model match: pick a Generic PPD from the printer's IEEE-1284 command sets. */
-    private fun generic(id: DeviceId?): Match? {
+    /** No model match: pick a Generic PPD from the printer's language families, then from its manufacturer. */
+    private fun generic(id: DeviceId?, who: PrinterIdentity?): Match? {
         val cmds = id?.commands.orEmpty().map { it.uppercase() }
+        val f = who?.families ?: Languages.families(cmds)
         val g = printers.filter { it.generic }
         fun pick(pred: (CatalogueEntry) -> Boolean) = g.firstOrNull(pred)?.let { Match(it, Quality.GENERIC) }
         return when {
-            cmds.any { it.startsWith("ESCPR") || it == "ESC/P-R" } -> pick { it.engine == "escpr" }
-            cmds.any { it.startsWith("PCL") } -> {
+            PdlFamily.ESCPR in f -> pick { it.engine == "escpr" }
+            PdlFamily.PCL5 in f || PdlFamily.PCLXL in f || PdlFamily.PCL3GUI in f -> {
                 val color = cmds.any { it == "PCLXL" || it.contains("PCL5C") }
                 pick { it.engine == "hplip" && it.commands.contains(if (color) "PCL5C" else "PCL5E") }
             }
-            cmds.any { it == "POSTSCRIPT" || it == "PS" || it.startsWith("POSTSCRIPT") } -> pick { it.engine == "builtin-ps" }
+            PdlFamily.POSTSCRIPT in f -> pick { it.engine == "builtin-ps" }
+            // Epson that names no language (no Device ID, found by USB vendor id or name): ESC/P-R is its usual driver
+            f.isEmpty() && who?.vendor == "Epson" -> pick { it.engine == "escpr" }
             else -> null
         }
     }

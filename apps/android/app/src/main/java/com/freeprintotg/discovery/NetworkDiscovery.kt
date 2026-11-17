@@ -63,21 +63,23 @@ class NetworkDiscovery(ctx: Context) {
         @Suppress("DEPRECATION") val host = (r.host as? java.net.Inet4Address)?.hostAddress ?: return null
         val txt = r.attributes.mapValues { it.value?.toString(Charsets.UTF_8).orEmpty() }
         val name = txt["ty"]?.ifBlank { null } ?: r.serviceName
-        val formats = txt["pdl"]?.split(',')?.map { it.trim() }?.toSet().orEmpty()
+        val formats = txt["pdl"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        // Lets the driver choice work for raw/LPD print servers (e.g. the ESP32 bridge) the same way it does over OTG.
+        val deviceId = DeviceId.fromTxt(txt)
         return when (type) {
             "_ipp._tcp", "_ipps._tcp" -> Printer(
                 id = "ipp:$host:${r.port}", name = name, transport = Transport.IPP,
                 host = host, port = r.port, tls = type == "_ipps._tcp",
                 ippPath = "/" + (txt["rp"] ?: "ipp/print").trimStart('/'),
-                formats = formats,
+                formats = formats, deviceId = deviceId,
             )
             "_pdl-datastream._tcp" -> Printer(
                 id = "raw:$host:${r.port}", name = name, transport = Transport.RAW_9100,
-                host = host, port = r.port, formats = formats,
+                host = host, port = r.port, formats = formats, deviceId = deviceId,
             )
             else -> Printer(
                 id = "lpd:$host:${r.port}", name = name, transport = Transport.LPD,
-                host = host, port = r.port, formats = formats,
+                host = host, port = r.port, formats = formats, deviceId = deviceId,
             )
         }
     }
