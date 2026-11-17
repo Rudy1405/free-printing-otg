@@ -22,12 +22,18 @@ data class PrinterIdentity(
     val families: Set<PdlFamily>,
     val vendorId: Int? = null,
     val productId: Int? = null,
+    /** "host:port" of a network printer, the last resort for [key]. */
+    val address: String? = null,
 ) {
-    /** Stable key for remembering a per-printer choice: USB ids when known, else vendor + model. */
+    /**
+     * Stable key for remembering a per-printer choice: USB ids when known, else vendor + model, else the network
+     * address (a raw-9100 box that reports nothing about itself, such as a print server).
+     */
     val key: String?
         get() = when {
             vendorId != null && productId != null -> "usb:%04x:%04x".format(vendorId, productId)
             vendor != null && model != null -> "name:" + Catalogue.norm("$vendor $model")
+            address != null -> "net:$address"
             else -> null
         }
 
@@ -45,6 +51,7 @@ data class PrinterIdentity(
                 families = Languages.families(id?.commands.orEmpty()),
                 vendorId = vid,
                 productId = p.usb?.productId,
+                address = p.host?.let { "$it:${p.port}" },
             )
         }
     }

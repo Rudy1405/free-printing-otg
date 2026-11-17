@@ -33,26 +33,50 @@ private const val RAW = "application/octet-stream"
 
 class PrintJob(private val ctx: Context, private val store: DriverStore, private val engines: EngineStore = EngineStore(ctx)) {
 
-    suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, status: (String) -> Unit) {
-        val onStatus: (String) -> Unit = { AppLog.d(it); status(it) }
-        val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
+    private val usb get() = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
+
+    /** USB permission, a fresh Device ID (only readable with permission) and the firmware upload quirk. */
+    private suspend fun prepare(selected: Printer, quirks: Quirks, onStatus: (String) -> Unit): Pair<Printer, Quirk?> {
         var printer = selected
         if (selected.usb != null) {
             val dev = usb.deviceList[selected.usb.deviceName] ?: error("USB printer unplugged")
             if (!UsbPermission.ensure(ctx, usb, dev)) error("USB permission denied")
-            // the IEEE-1284 id can only be read once permission is granted
             printer = UsbDiscovery.printersOf(usb, dev).firstOrNull { it.id == selected.id } ?: selected
         }
-        val ref = printer.usb
         AppLog.d("Printer: ${printer.name} via ${printer.transport} id=${printer.deviceId?.raw ?: "none"}")
-
-        val quirks = store.quirks()
         val quirk = quirks.forPrinter(printer)
         quirk?.let { AppLog.d("Quirk: ${it.id}") }
         if (printer.transport == Transport.USB_BULK && quirk?.firmwareUpload != null) {
             printer = FirmwareUpload.ensure(ctx, usb, printer, quirk.firmwareUpload, onStatus)
         }
-        val resolver = DriverResolver(store.bundled(), quirks = quirks)
+        return printer to quirk
+    }
+
+    /**
+     * Setup assistant (G4): one test page in [lang], sent raw. Office languages are preceded by a PJL
+     * Universal Exit Language so a printer left in another language starts clean.
+     */
+    suspend fun printTestPage(selected: Printer, lang: Language, index: Int, total: Int, sheet: PaperSize, status: (String) -> Unit) {
+        val onStatus: (String) -> Unit = { AppLog.d(it); status(it) }
+        val (printer, quirk) = prepare(selected, store.quirks(), onStatus)
+        val paper = LanguageProbe.testPaper(lang, sheet)
+        val dpi = lang.defaultDpi ?: if (lang == Language.POSTSCRIPT) 150 else 300
+        val page = TestPage.render(LanguageProbe.testText(lang, index, total), paper, dpi)
+        val doc = RenderedDoc("test-$index", DocKind.IMAGE, null, sequenceOf(page))
+        val (bytes, _) = encode(lang, doc, PrintOptions(paper = paper, color = false, dpi = dpi), dpi, pjl = false)
+        val reset = if (lang.isLabelOrReceipt) ByteArray(0) else "\u001B%-12345X".toByteArray(Charsets.US_ASCII)
+        onStatus("Sending test $index/$total (${lang.title})…")
+        openSink(printer, usb, quirk).use { it.write(reset + bytes) }
+    }
+
+    suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, status: (String) -> Unit) {
+        val onStatus: (String) -> Unit = { AppLog.d(it); status(it) }
+        val usb = usb
+        val quirks = store.quirks()
+        val (prepared, quirk) = prepare(selected, quirks, onStatus)
+        val printer = prepared
+        val ref = printer.usb
+        val resolver = DriverResolver(store.bundled(), learned = LearnedLanguages.all(ctx), quirks = quirks)
         for (uri in uris) {
             // IPP printers tell us exactly what they accept; ask once per job.
             var ippClient: IppClient? = null

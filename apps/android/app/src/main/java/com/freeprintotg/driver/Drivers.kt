@@ -12,11 +12,11 @@ import java.util.zip.ZipInputStream
  * Output language a driver produces. Each maps to one encoder in [com.freeprintotg.render.Encoders] or
  * [com.freeprintotg.render.RasterEncoders].
  */
-enum class Language(val defaultDpi: Int? = null) {
-    PDF, PWG_RASTER, POSTSCRIPT, PCL_MONO,
-    PCL_XL(300), URF,
+enum class Language(val title: String, val defaultDpi: Int? = null) {
+    PDF("PDF"), PWG_RASTER("PWG raster"), POSTSCRIPT("PostScript"), PCL_MONO("PCL 5"),
+    PCL_XL("PCL 6", 300), URF("Apple raster"),
     /** Receipt and label printers are almost all 8 dots/mm. */
-    ESC_POS(203), TSPL(203), ZPL(203),
+    ESC_POS("ESC/POS receipt", 203), TSPL("TSPL label", 203), ZPL("ZPL label", 203),
     ;
 
     val isLabelOrReceipt get() = this == ESC_POS || this == TSPL || this == ZPL
