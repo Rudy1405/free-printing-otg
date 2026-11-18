@@ -23,6 +23,8 @@ import com.freeprintotg.AppLog
 import com.freeprintotg.PrintViewModel
 import com.freeprintotg.R
 import com.freeprintotg.Settings
+import com.freeprintotg.ThemeMode
+import com.freeprintotg.ThemePrefs
 import com.freeprintotg.driver.LanguageProbe
 import com.freeprintotg.render.DocKind
 import com.freeprintotg.render.DocumentRenderer
@@ -310,6 +312,18 @@ private fun ColumnScope.SettingsScreen(vm: PrintViewModel, onBack: () -> Unit) {
     var copied by remember { mutableStateOf(false) }
     AppHeader("Settings & log", onBack = onBack)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle("Appearance")
+        SectionCard {
+            Text("Choose light or dark, or follow the phone's setting.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark").forEach { (m, label) ->
+                    FilterChip(
+                        selected = ThemePrefs.mode == m, onClick = { ThemePrefs.set(ctx, m) }, label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Palette.TurquoiseTint, selectedLabelColor = Palette.Ink),
+                    )
+                }
+            }
+        }
         SectionTitle("Log")
         SectionCard {
             Text("If a print fails, copy the log and send it to whoever is helping you.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)

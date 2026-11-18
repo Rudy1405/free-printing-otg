@@ -1,6 +1,9 @@
 package com.freeprintotg
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /** User-editable settings. The driver server URL overrides the build-time default so a test device can point at a PC. */
 object Settings {
@@ -29,5 +32,24 @@ object LearnedLanguages {
 
     fun forget(ctx: Context, key: String) {
         prefs(ctx).edit().remove(key).apply()
+    }
+}
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+/** Light/dark choice. [mode] is snapshot state so the UI recolours as soon as it changes; SYSTEM follows the phone. */
+object ThemePrefs {
+    var mode by mutableStateOf(ThemeMode.SYSTEM)
+        private set
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    fun load(ctx: Context) {
+        mode = runCatching { ThemeMode.valueOf(prefs(ctx).getString("theme_mode", null) ?: "") }.getOrDefault(ThemeMode.SYSTEM)
+    }
+
+    fun set(ctx: Context, m: ThemeMode) {
+        mode = m
+        prefs(ctx).edit().putString("theme_mode", m.name).apply()
     }
 }
