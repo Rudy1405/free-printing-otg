@@ -91,7 +91,7 @@ fun PrinterBar(printer: Printer?, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        IconTile(R.drawable.ic_printer, size = 46.dp, background = Color.White, tint = Palette.TurquoiseDeep, shape = CircleShape)
+        IconTile(R.drawable.ic_printer, size = 46.dp, background = Color.White, tint = Palette.TurquoiseOnWhite, shape = CircleShape)
         Column(Modifier.weight(1f)) {
             Text(printer?.name ?: "No printer selected", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
