@@ -3,6 +3,9 @@ package com.freeprintotg
 import android.content.Context
 import android.hardware.usb.UsbManager
 import android.net.Uri
+import com.freeprintotg.ble.BridgeClient
+import com.freeprintotg.ble.BridgeError
+import com.freeprintotg.discovery.BleDiscovery
 import com.freeprintotg.discovery.UsbDiscovery
 import com.freeprintotg.driver.*
 import com.freeprintotg.ipp.HttpIppChannel
@@ -30,6 +33,8 @@ private val SELF_SUFFICIENT = setOf(
     Language.ESC_POS, Language.TSPL, Language.ZPL,
 )
 private const val RAW = "application/octet-stream"
+/** Above this a Bluetooth job takes long enough to warn about (about 20-100 KB/s, see BLE-APP-PLAN.md section 3). */
+private const val BLE_SLOW_BYTES = 512L * 1024
 
 class PrintJob(private val ctx: Context, private val store: DriverStore, private val engines: EngineStore = EngineStore(ctx)) {
 
@@ -43,6 +48,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
             if (!UsbPermission.ensure(ctx, usb, dev)) error("USB permission denied")
             printer = UsbDiscovery.printersOf(usb, dev).firstOrNull { it.id == selected.id } ?: selected
         }
+        if (selected.ble != null) printer = prepareBridge(selected, onStatus)
         AppLog.d("Printer: ${printer.name} via ${printer.transport} id=${printer.deviceId?.raw ?: "none"}")
         val quirk = quirks.forPrinter(printer)
         quirk?.let { AppLog.d("Quirk: ${it.id}") }
@@ -50,6 +56,32 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
             printer = FirmwareUpload.ensure(ctx, usb, printer, quirk.firmwareUpload, onStatus)
         }
         return printer to quirk
+    }
+
+    /**
+     * Bluetooth bridge: reads who the printer behind it is (so driver choice, quirks and saved settings work as over
+     * OTG). When the bridge is also on this phone's Wi-Fi, its RAW 9100 port is used instead: same printer, many
+     * times faster than Bluetooth.
+     */
+    private fun prepareBridge(p: Printer, onStatus: (String) -> Unit): Printer {
+        val ref = p.ble ?: return p
+        if (BleDiscovery(ctx).missingPermissions().isNotEmpty()) error("Allow Nearby devices (Bluetooth) for this app, then try again")
+        onStatus("Connecting to ${p.name} over Bluetooth…")
+        val info = BridgeClient.connect(ctx, ref.address).use { it.readInfo() }
+        AppLog.d("Bridge info: fw ${info.firmware}, state ${info.state}, id=${info.deviceId}, ip=${info.ip}")
+        if (!info.hasPrinter) error(BridgeError.NO_PRINTER.message)
+        val id = info.deviceId.takeIf { it.isNotBlank() }?.let(DeviceId::parse)
+        val bridged = p.copy(
+            name = listOfNotNull(id?.mfg, id?.mdl).joinToString(" ").ifBlank { "${info.usbManufacturer} ${info.usbProduct}".trim() }
+                .ifBlank { p.name } + " (Bluetooth)",
+            deviceId = id,
+            ble = ref.copy(vendorId = info.vendorId, productId = info.productId),
+        )
+        val ip = info.ip ?: return bridged
+        val reachable = runCatching { java.net.Socket().use { it.connect(java.net.InetSocketAddress(ip, 9100), 1500) } }.isSuccess
+        if (!reachable) return bridged
+        onStatus("The bridge is on Wi-Fi ($ip): sending over the network, it is faster")
+        return bridged.copy(transport = Transport.RAW_9100, host = ip, port = 9100)
     }
 
     /**
@@ -66,7 +98,8 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         val (bytes, _) = encode(lang, doc, PrintOptions(paper = paper, color = false, dpi = dpi), dpi, pjl = false)
         val reset = if (lang.isLabelOrReceipt) ByteArray(0) else "\u001B%-12345X".toByteArray(Charsets.US_ASCII)
         onStatus("Sending test $index/$total (${lang.title})…")
-        openSink(printer, usb, quirk).use { it.write(reset + bytes) }
+        val all = reset + bytes
+        openSink(printer, usb, quirk, all.size.toLong(), onStatus).use { it.write(all) }
     }
 
     suspend fun print(selected: Printer, uris: List<Uri>, opt: PrintOptions, status: (String) -> Unit) {
@@ -122,11 +155,11 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                 onStatus("Sending ${bytes.size / 1024} KiB to ${printer.name}…")
                 if (useEngine) {
                     // engine output is the printer's own language: raw port, never IPP document-format negotiation
-                    openSink(printer.takeIf { it.transport != Transport.IPP } ?: printer.copy(transport = Transport.RAW_9100, port = 9100), usb, quirk).use { it.write(bytes) }
+                    openSink(printer.takeIf { it.transport != Transport.IPP } ?: printer.copy(transport = Transport.RAW_9100, port = 9100), usb, quirk, bytes.size.toLong(), onStatus).use { it.write(bytes) }
                 } else if (ippClient != null) {
                     ippClient.printJob(bytes, mime, doc.name, o.copies, o.duplex, o.color)
                 } else {
-                    openSink(printer, usb, quirk).use { it.write(bytes) }
+                    openSink(printer, usb, quirk, bytes.size.toLong(), onStatus).use { it.write(bytes) }
                 }
                 onStatus("Sent ${doc.name}")
             } finally {
@@ -184,7 +217,15 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         Language.ZPL -> RasterEncoders.zpl(doc.pages.asRasters(), o.copies) to RAW
     }
 
-    private fun openSink(p: Printer, usb: UsbManager, quirk: Quirk?): PrintSink = when (p.transport) {
+    private fun openSink(p: Printer, usb: UsbManager, quirk: Quirk?, total: Long, onStatus: (String) -> Unit): PrintSink = when (p.transport) {
+        Transport.BLE_BRIDGE -> {
+            if (total > BLE_SLOW_BYTES) onStatus("Sending ${total / 1024} KiB over Bluetooth: this can take a few minutes")
+            var lastPct = -1
+            BleSink(ctx, p.ble!!.address, total) { sent, all ->
+                val pct = (sent * 100 / all.coerceAtLeast(1)).toInt()
+                if (pct / 10 != lastPct / 10) { lastPct = pct; onStatus("Bluetooth: $pct% of ${all / 1024} KiB") }
+            }
+        }
         Transport.USB_BULK -> UsbBulkSink(usb, p.usb!!, drainIn = quirk?.drainBulkIn == true)
         Transport.RAW_9100 -> RawSocketSink(p.host!!, p.port.takeIf { it > 0 } ?: 9100)
         Transport.LPD -> LpdSink(p.host!!, p.port)

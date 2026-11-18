@@ -1,7 +1,10 @@
 package com.freeprintotg
 
 /** How bytes reach the printer. Mirrors NokoPrint's ipp:// pdl:// lpd:// usb:// ipp-usb:// URI schemes. */
-enum class Transport { IPP, RAW_9100, LPD, USB_BULK, IPP_USB }
+enum class Transport { IPP, RAW_9100, LPD, USB_BULK, IPP_USB, BLE_BRIDGE }
+
+/** A PrintBridge (ESP32-S3) reached over Bluetooth LE. USB ids are what the bridge reports about its printer. */
+data class BleRef(val address: String, val vendorId: Int? = null, val productId: Int? = null)
 
 /** Page description languages the app can produce, as IPP document-format MIME types. */
 enum class Pdl(val mime: String) {
@@ -63,6 +66,7 @@ data class Printer(
     val ippPath: String = "/ipp/print",
     val tls: Boolean = false,
     val usb: UsbEndpointRef? = null,
+    val ble: BleRef? = null,
     val deviceId: DeviceId? = null,
     /** Document formats advertised by the printer (mDNS `pdl` TXT key or IPP document-format-supported). */
     val formats: Set<String> = emptySet(),

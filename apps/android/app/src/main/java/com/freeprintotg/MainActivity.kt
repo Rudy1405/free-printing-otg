@@ -26,6 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.freeprintotg.ble.BridgeClient
+import com.freeprintotg.ble.BridgeProtocol
+import com.freeprintotg.ble.Notice
+import com.freeprintotg.discovery.BleDiscovery
 import com.freeprintotg.discovery.NetworkDiscovery
 import com.freeprintotg.discovery.UsbDiscovery
 import com.freeprintotg.driver.DriverStore
@@ -49,6 +53,10 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
     private var scanJob: Job? = null
     var options by mutableStateOf(PrintOptions())
     private var netJob: Job? = null
+    private var bleJob: Job? = null
+    /** Bluetooth bridges need runtime permissions the UI asks for; until then this lists what is missing. */
+    var bleMissing by mutableStateOf(BleDiscovery(app).missingPermissions())
+    var bleOff by mutableStateOf(false)
 
     fun refresh() {
         val ctx = getApplication<Application>()
@@ -70,6 +78,50 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
         netJob?.cancel()
         netJob = viewModelScope.launch {
             NetworkDiscovery(getApplication()).discover().catch { status = "Network discovery failed: ${it.message}"; statusTone = com.freeprintotg.ui.Tone.Error }.collect(::add)
+        }
+        // Bluetooth PrintBridges (ESP32-S3), only once the user allowed Nearby devices.
+        val ble = BleDiscovery(ctx)
+        bleMissing = ble.missingPermissions()
+        bleOff = !ble.available()
+        bleJob?.cancel()
+        if (bleMissing.isEmpty() && !bleOff) {
+            printers.removeAll { it.ble != null }
+            bleJob = viewModelScope.launch {
+                ble.discover().catch { AppLog.d("Bluetooth discovery failed: ${it.message}") }.collect(::add)
+            }
+            viewModelScope.launch { kotlinx.coroutines.delay(15000); bleJob?.cancel() } // scanning drains battery
+        }
+    }
+
+    /** Sends a Wi-Fi network to a Bluetooth bridge (pairs first: the bridge only takes the password encrypted). */
+    fun bridgeWifi(p: Printer, ssid: String, password: String) {
+        val ref = p.ble ?: return
+        busy = true
+        status = "Connecting to ${p.name}…"; statusTone = com.freeprintotg.ui.Tone.Info
+        viewModelScope.launch {
+            try {
+                val msg = BridgeProtocol.wifiSet(ssid.trim(), password)
+                val result = withContext(Dispatchers.IO) {
+                    BridgeClient.connect(getApplication(), ref.address).use { c ->
+                        c.ensureBonded()
+                        c.sendControl(msg)
+                        val deadline = System.currentTimeMillis() + 20_000
+                        var answer: Notice? = null
+                        while (answer == null && System.currentTimeMillis() < deadline) {
+                            answer = c.nextNotice(1000)?.takeIf { it is Notice.WifiState || it is Notice.Error }
+                        }
+                        answer
+                    }
+                }
+                when (result) {
+                    is Notice.WifiState -> { status = "Saved. The bridge restarts and joins \"${ssid.trim()}\"; it then also appears under Wi-Fi."; statusTone = com.freeprintotg.ui.Tone.Info }
+                    is Notice.Error -> { status = result.error.message; statusTone = com.freeprintotg.ui.Tone.Warning }
+                    else -> { status = "The bridge did not answer"; statusTone = com.freeprintotg.ui.Tone.Error }
+                }
+            } catch (e: Exception) {
+                status = "Bridge Wi-Fi setup failed: ${e.message}"; statusTone = com.freeprintotg.ui.Tone.Error
+                AppLog.d(status)
+            } finally { busy = false }
         }
     }
 

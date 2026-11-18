@@ -16,7 +16,8 @@ object LanguageProbe {
     private val LABEL_VENDORS = setOf("Zebra", "TSC", "Star", "Citizen", "Bixolon")
 
     /** IPP printers say what they accept; only raw links (USB, 9100, LPD) need the assistant. */
-    fun applies(p: Printer) = p.transport == Transport.USB_BULK || p.transport == Transport.RAW_9100 || p.transport == Transport.LPD
+    fun applies(p: Printer) = p.transport == Transport.USB_BULK || p.transport == Transport.RAW_9100 || p.transport == Transport.LPD ||
+        p.transport == Transport.BLE_BRIDGE
 
     /**
      * Languages to try, most likely first. Office languages fail quietly on the wrong printer (a page or nothing),

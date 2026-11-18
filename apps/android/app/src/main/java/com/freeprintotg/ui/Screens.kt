@@ -128,17 +128,39 @@ private fun ColumnScope.PrintersScreen(vm: PrintViewModel, onBack: () -> Unit) {
             if (tab == 0) HeaderIcon(R.drawable.ic_add, "Add by IP address") { showAdd = true }
             HeaderIcon(R.drawable.ic_refresh, "Scan again") { vm.refresh() }
         },
-        below = { HeaderTabs(listOf(R.drawable.ic_wifi to "Wi-Fi", R.drawable.ic_usb to "USB"), tab) { tab = it } },
+        below = { HeaderTabs(listOf(R.drawable.ic_wifi to "Wi-Fi", R.drawable.ic_usb to "USB", R.drawable.ic_bluetooth to "Bluetooth"), tab) { tab = it } },
     )
-    val list = vm.printers.filter { (it.usb != null) == (tab == 1) }
+    val list = vm.printers.filter {
+        when (tab) {
+            1 -> it.usb != null
+            2 -> it.ble != null
+            else -> it.usb == null && it.ble == null
+        }
+    }
+    val blePermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
+    var showBridgeWifi by remember { mutableStateOf(false) }
     Column(
         Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (vm.scanning) ProgressBanner("Searching…")
         list.forEach { p -> PrinterRow(p, vm.selected?.id == p.id) { vm.selected = p; onBack() } }
-        if (list.isEmpty() && !vm.scanning) {
-            if (tab == 0) EmptyState(
+        if (tab == 2 && vm.busy) ProgressBanner(vm.status)
+        else if (tab == 2 && vm.status.isNotBlank()) Banner(vm.status, vm.statusTone)
+        if (tab == 2 && vm.bleMissing.isNotEmpty()) {
+            EmptyState(
+                R.drawable.ic_bluetooth,
+                "Allow Bluetooth access",
+                "A PrintBridge lets this phone print to a USB printer without a cable. The app needs the Nearby devices permission to find it; it never uses your location.",
+            )
+        } else if (tab == 2 && vm.bleOff) {
+            EmptyState(R.drawable.ic_bluetooth, "Bluetooth is off", "Turn Bluetooth on, then scan again.")
+        } else if (list.isEmpty() && !vm.scanning) {
+            if (tab == 2) EmptyState(
+                R.drawable.ic_bluetooth,
+                "No PrintBridge found",
+                "Power the bridge with its USB cable and keep it within a few metres of this phone. A PrintBridge is an ESP32-S3 board plugged into the printer's USB port.",
+            ) else if (tab == 0) EmptyState(
                 R.drawable.ic_wifi,
                 "No Wi-Fi printers found",
                 "Check that the printer is on and on the same Wi-Fi network as this phone. You can also add it by its IP address.",
@@ -153,12 +175,47 @@ private fun ColumnScope.PrintersScreen(vm: PrintViewModel, onBack: () -> Unit) {
     Surface(color = Palette.Paper, shadowElevation = 8.dp) {
         Column(Modifier.navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (tab == 0) SecondaryButton("Add printer by IP address") { showAdd = true }
-            PrimaryButton("Scan again") { vm.refresh() }
+            if (tab == 2 && vm.selected?.ble != null && !vm.busy) SecondaryButton("Connect this bridge to Wi-Fi") { showBridgeWifi = true }
+            if (tab == 2 && vm.bleMissing.isNotEmpty()) PrimaryButton("Allow Bluetooth access") { blePermissions.launch(vm.bleMissing.toTypedArray()) }
+            else PrimaryButton("Scan again") { vm.refresh() }
         }
     }
     if (showAdd) AddPrinterDialog(
         onDismiss = { showAdd = false },
         onAdd = { host, raw -> vm.addManual(host, raw); showAdd = false; onBack() },
+    )
+    val bridge = vm.selected
+    if (showBridgeWifi && bridge?.ble != null) BridgeWifiDialog(
+        onDismiss = { showBridgeWifi = false },
+        onSave = { ssid, pass -> vm.bridgeWifi(bridge, ssid, pass); showBridgeWifi = false },
+    )
+}
+
+/**
+ * Sends a Wi-Fi network to a PrintBridge over Bluetooth. The bridge accepts it only while its setup network is up or
+ * for 5 minutes after a short press on its BOOT button, and only over a paired (encrypted) link.
+ */
+@Composable
+private fun BridgeWifiDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var ssid by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    val passOk = pass.isEmpty() || pass.length in 8..64
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bridge Wi-Fi") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Press the bridge's BOOT button once, then save within 5 minutes. Android may ask to pair: accept it.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                OutlinedTextField(ssid, { ssid = it }, label = { Text("Network name (2.4 GHz)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    pass, { pass = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    isError = !passOk, supportingText = { if (!passOk) Text("8 to 64 characters, or empty for an open network") },
+                )
+            }
+        },
+        confirmButton = { TextButton({ onSave(ssid, pass) }, enabled = ssid.isNotBlank() && passOk) { Text("Save", color = Palette.TurquoiseDeep) } },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel", color = Palette.InkSoft) } },
     )
 }
 

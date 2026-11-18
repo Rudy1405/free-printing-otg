@@ -1,6 +1,6 @@
 # Plan: conexión por BLE al puente ESP32-S3 (Android, y base para iOS)
 
-Estado: **plan, sin implementar**. El hardware/firmware del puente se planifica aparte (carpeta local
+Estado: **fases A, B y C implementadas (app y firmware), sin probar en hardware.** Código: `ble/BridgeProtocol.kt`, `ble/BridgeClient.kt`, `transport/BleSink.kt`, `discovery/BleDiscovery.kt`, pestaña Bluetooth en `ui/Screens.kt`; firmware `esp32-bridge/firmware/src/ble_bridge.c`. Pendiente: fase D (L2CAP, medir velocidad) e iOS. El hardware/firmware del puente se planifica aparte (carpeta local
 `esp32-bridge/`, ignorada por git).
 
 Base: el video *"I Made a USB Printer Wireless with ESP32-S3"* (Tech Panda) y su firmware
@@ -84,7 +84,7 @@ driverless (túnel IPP-USB en el puerto 631). Ver `GENERIC-PRINTING-PLAN.md` §3
 | `0x05 GET_INFO` | app→fw | — | Fuerza notificación de Info |
 | `0x81 CREDIT` | fw→app | `jobId u16, bytes u32` | "Puedes enviar N bytes más" (control de flujo) |
 | `0x82 DONE` | fw→app | `jobId u16` | Todo salió por USB |
-| `0x83 ERROR` | fw→app | `jobId u16, code u8` | `1 busy, 2 no_printer, 3 usb_error, 4 timeout, 5 overflow, 6 wifi_fail` |
+| `0x83 ERROR` | fw→app | `jobId u16, code u8` | `1 busy, 2 no_printer, 3 usb_error, 4 timeout, 5 overflow, 6 wifi_fail, 7 needs_pairing, 8 not_in_setup` |
 | `0x84 WIFI_STATE` | fw→app | `state u8, ip[4]` | Resultado de provisión |
 | `0x85 STATUS` | fw→app | `flags u8` | Estado de la impresora (USB GET_PORT_STATUS): bit0 sin papel, bit1 seleccionada, bit2 sin error, bit3 trabajo RAW 9100 en curso |
 
@@ -94,8 +94,13 @@ driverless (túnel IPP-USB en el puerto 631). Ver `GENERIC-PRINTING-PLAN.md` §3
 **Data**: bytes crudos del trabajo, sin encabezado, trozos ≤ MTU−3. La app **nunca** excede los créditos
 recibidos. El firmware cierra el trabajo por `END_JOB`, `ABORT`, desconexión BLE o 10 s sin datos.
 
-Seguridad v1: el puente solo acepta trabajos de un cliente conectado; emparejamiento "Just Works" +
-opcional PIN en v2. No se envía la contraseña de Wi-Fi sin conexión cifrada (LE Secure Connections).
+Seguridad v1: el puente solo acepta trabajos de un cliente conectado. `WIFI_SET` exige dos cosas: enlace cifrado
+(emparejamiento "Just Works" con LE Secure Connections; si no, `ERROR 7` y el puente pide emparejar) y modo de
+configuración (AP de configuración activo o 5 minutos tras una pulsación corta de BOOT; si no, `ERROR 8`). Así nadie
+cercano puede cambiar el Wi-Fi del puente. PIN de emparejamiento en v2.
+
+**Créditos:** al abrir el trabajo el puente concede el tamaño de su anillo (24 KiB) y luego devuelve crédito a
+medida que pasa bytes a USB (cada 2 KiB o al vaciarse). La app nunca tiene más bytes en vuelo que el anillo.
 
 ## 5. Cambios en la app Android
 

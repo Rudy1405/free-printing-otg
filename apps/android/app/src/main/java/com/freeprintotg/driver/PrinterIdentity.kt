@@ -40,7 +40,7 @@ data class PrinterIdentity(
     companion object {
         fun of(p: Printer): PrinterIdentity {
             val id = p.deviceId
-            val vid = p.usb?.vendorId
+            val vid = p.usb?.vendorId ?: p.ble?.vendorId
             val vendor = Vendors.canonical(id?.mfg) ?: vid?.let(Vendors::fromVid) ?: Vendors.fromName(p.name)
             // Without a Device ID, the display name is a model only when it names a maker ("HP LaserJet 1020"),
             // not when it is a placeholder like "USB printer 03f0:0517".
@@ -50,8 +50,8 @@ data class PrinterIdentity(
                 model = rawModel?.let { Models.normalize(vendor, it) }?.ifBlank { null },
                 families = Languages.families(id?.commands.orEmpty()),
                 vendorId = vid,
-                productId = p.usb?.productId,
-                address = p.host?.let { "$it:${p.port}" },
+                productId = p.usb?.productId ?: p.ble?.productId,
+                address = p.host?.let { "$it:${p.port}" } ?: p.ble?.address?.let { "ble:$it" },
             )
         }
     }

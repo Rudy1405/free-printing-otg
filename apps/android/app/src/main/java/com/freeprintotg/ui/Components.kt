@@ -106,7 +106,17 @@ fun PrinterBar(printer: Printer?, onClick: (() -> Unit)?) {
     }
 }
 
-fun printerSubtitle(p: Printer) = if (p.usb != null) "USB (OTG)" else "${p.transport} · ${p.host}"
+fun printerSubtitle(p: Printer) = when {
+    p.usb != null -> "USB (OTG)"
+    p.ble != null -> "Bluetooth bridge"
+    else -> "${p.transport} · ${p.host}"
+}
+
+fun printerIcon(p: Printer) = when {
+    p.usb != null -> R.drawable.ic_usb
+    p.ble != null -> R.drawable.ic_bluetooth
+    else -> R.drawable.ic_printer
+}
 
 @Composable
 fun IconTile(
@@ -210,7 +220,7 @@ fun PrinterRow(p: Printer, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            IconTile(if (p.usb != null) R.drawable.ic_usb else R.drawable.ic_printer, size = 48.dp, shape = CircleShape)
+            IconTile(printerIcon(p), size = 48.dp, shape = CircleShape)
             Column(Modifier.weight(1f)) {
                 Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(printerSubtitle(p), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
