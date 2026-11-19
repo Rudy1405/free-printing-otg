@@ -47,7 +47,8 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
     val printers = mutableStateListOf<Printer>()
     val documents = mutableStateListOf<Uri>()
     var selected by mutableStateOf<Printer?>(null)
-    var status by mutableStateOf("Searching for printers…")
+    var status by mutableStateOf(app.getString(R.string.status_searching))
+    private fun s(id: Int, vararg a: Any) = getApplication<Application>().getString(id, *a)
     var statusTone by mutableStateOf(com.freeprintotg.ui.Tone.Info)
     var scanning by mutableStateOf(false)
     var busy by mutableStateOf(false)
@@ -78,7 +79,7 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
         scanJob = viewModelScope.launch { scanning = true; kotlinx.coroutines.delay(8000); scanning = false }
         netJob?.cancel()
         netJob = viewModelScope.launch {
-            NetworkDiscovery(getApplication()).discover().catch { status = "Network discovery failed: ${it.message}"; statusTone = com.freeprintotg.ui.Tone.Error }.collect(::add)
+            NetworkDiscovery(getApplication()).discover().catch { status = s(R.string.net_discovery_failed, it.message ?: ""); statusTone = com.freeprintotg.ui.Tone.Error }.collect(::add)
         }
         // Bluetooth PrintBridges (ESP32-S3), only once the user allowed Nearby devices.
         val ble = BleDiscovery(ctx)
@@ -98,7 +99,7 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
     fun bridgeWifi(p: Printer, ssid: String, password: String) {
         val ref = p.ble ?: return
         busy = true
-        status = "Connecting to ${p.name}…"; statusTone = com.freeprintotg.ui.Tone.Info
+        status = s(R.string.bridge_connecting, p.name); statusTone = com.freeprintotg.ui.Tone.Info
         viewModelScope.launch {
             try {
                 val msg = BridgeProtocol.wifiSet(ssid.trim(), password)
@@ -115,12 +116,12 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 when (result) {
-                    is Notice.WifiState -> { status = "Saved. The bridge restarts and joins \"${ssid.trim()}\"; it then also appears under Wi-Fi."; statusTone = com.freeprintotg.ui.Tone.Info }
+                    is Notice.WifiState -> { status = s(R.string.bridge_saved, ssid.trim()); statusTone = com.freeprintotg.ui.Tone.Info }
                     is Notice.Error -> { status = result.error.message; statusTone = com.freeprintotg.ui.Tone.Warning }
-                    else -> { status = "The bridge did not answer"; statusTone = com.freeprintotg.ui.Tone.Error }
+                    else -> { status = s(R.string.bridge_no_answer); statusTone = com.freeprintotg.ui.Tone.Error }
                 }
             } catch (e: Exception) {
-                status = "Bridge Wi-Fi setup failed: ${e.message}"; statusTone = com.freeprintotg.ui.Tone.Error
+                status = s(R.string.bridge_setup_failed, e.message ?: ""); statusTone = com.freeprintotg.ui.Tone.Error
                 AppLog.d(status)
             } finally { busy = false }
         }
@@ -130,8 +131,8 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
         val h = host.trim().substringBefore(':')
         if (h.isEmpty()) return
         add(
-            if (raw) Printer("raw:$h:9100", "Printer $h (raw 9100)", Transport.RAW_9100, host = h, port = 9100)
-            else Printer("ipp:$h:631", "Printer $h (IPP)", Transport.IPP, host = h, port = 631),
+            if (raw) Printer("raw:$h:9100", s(R.string.printer_ip_raw, h), Transport.RAW_9100, host = h, port = 9100)
+            else Printer("ipp:$h:631", s(R.string.printer_ip_ipp, h), Transport.IPP, host = h, port = 631),
         )
         selected = printers.last()
     }
@@ -146,12 +147,12 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
     private fun add(p: Printer) {
         if (printers.none { it.id == p.id }) printers += p
         if (selected == null) selected = p
-        status = "${printers.size} printer(s) found"; statusTone = com.freeprintotg.ui.Tone.Info
+        status = s(R.string.printers_found, printers.size); statusTone = com.freeprintotg.ui.Tone.Info
     }
 
     fun print() {
         val p = selected ?: return
-        if (documents.isEmpty()) { status = "Choose a file first"; statusTone = com.freeprintotg.ui.Tone.Warning; return }
+        if (documents.isEmpty()) { status = s(R.string.choose_file_first); statusTone = com.freeprintotg.ui.Tone.Warning; return }
         busy = true
         statusTone = com.freeprintotg.ui.Tone.Info
         viewModelScope.launch {
@@ -160,7 +161,7 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
                     PrintJob(getApplication(), DriverStore(getApplication())).print(p, documents.toList(), options) { status = it; statusTone = com.freeprintotg.ui.Tone.Info }
                 }
             } catch (e: Exception) {
-                status = "Print failed: ${e.message}"
+                status = s(R.string.print_failed, e.message ?: "")
                 statusTone = com.freeprintotg.ui.Tone.Error
                 AppLog.d("Print failed: ${e::class.java.simpleName}: ${e.message}\n" + e.stackTraceToString().lines().take(6).joinToString("\n"))
             } finally { busy = false }

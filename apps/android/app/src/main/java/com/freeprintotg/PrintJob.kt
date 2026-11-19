@@ -39,13 +39,14 @@ private const val BLE_SLOW_BYTES = 512L * 1024
 class PrintJob(private val ctx: Context, private val store: DriverStore, private val engines: EngineStore = EngineStore(ctx)) {
 
     private val usb get() = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
+    private fun s(id: Int, vararg a: Any) = ctx.getString(id, *a)
 
     /** USB permission, a fresh Device ID (only readable with permission) and the firmware upload quirk. */
     private suspend fun prepare(selected: Printer, quirks: Quirks, onStatus: (String) -> Unit): Pair<Printer, Quirk?> {
         var printer = selected
         if (selected.usb != null) {
-            val dev = usb.deviceList[selected.usb.deviceName] ?: error("USB printer unplugged")
-            if (!UsbPermission.ensure(ctx, usb, dev)) error("USB permission denied")
+            val dev = usb.deviceList[selected.usb.deviceName] ?: error(s(R.string.job_usb_unplugged))
+            if (!UsbPermission.ensure(ctx, usb, dev)) error(s(R.string.job_usb_denied))
             printer = UsbDiscovery.printersOf(usb, dev).firstOrNull { it.id == selected.id } ?: selected
         }
         if (selected.ble != null) printer = prepareBridge(selected, onStatus)
@@ -65,8 +66,8 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
      */
     private fun prepareBridge(p: Printer, onStatus: (String) -> Unit): Printer {
         val ref = p.ble ?: return p
-        if (BleDiscovery(ctx).missingPermissions().isNotEmpty()) error("Allow Nearby devices (Bluetooth) for this app, then try again")
-        onStatus("Connecting to ${p.name} over Bluetooth…")
+        if (BleDiscovery(ctx).missingPermissions().isNotEmpty()) error(s(R.string.job_ble_permission))
+        onStatus(s(R.string.job_connecting_bt, p.name))
         val info = BridgeClient.connect(ctx, ref.address).use { it.readInfo() }
         AppLog.d("Bridge info: fw ${info.firmware}, state ${info.state}, id=${info.deviceId}, ip=${info.ip}")
         if (!info.hasPrinter) error(BridgeError.NO_PRINTER.message)
@@ -80,7 +81,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         val ip = info.ip ?: return bridged
         val reachable = runCatching { java.net.Socket().use { it.connect(java.net.InetSocketAddress(ip, 9100), 1500) } }.isSuccess
         if (!reachable) return bridged
-        onStatus("The bridge is on Wi-Fi ($ip): sending over the network, it is faster")
+        onStatus(s(R.string.job_bridge_on_wifi, ip))
         return bridged.copy(transport = Transport.RAW_9100, host = ip, port = 9100)
     }
 
@@ -97,7 +98,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         val doc = RenderedDoc("test-$index", DocKind.IMAGE, null, sequenceOf(page))
         val (bytes, _) = encode(lang, doc, PrintOptions(paper = paper, color = false, dpi = dpi), dpi, pjl = false)
         val reset = if (lang.isLabelOrReceipt) ByteArray(0) else "\u001B%-12345X".toByteArray(Charsets.US_ASCII)
-        onStatus("Sending test $index/$total (${lang.title})…")
+        onStatus(s(R.string.job_sending_test, index, total, lang.title))
         val all = reset + bytes
         openSink(printer, usb, quirk, all.size.toLong(), onStatus).use { it.write(all) }
     }
@@ -132,15 +133,15 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                 if (engine != null && engine.entry.engine == "builtin-ps") plan = Plan(Language.POSTSCRIPT, null, "Generic PostScript")
                 val useEngine = engine != null && engine.entry.engine != "builtin-ps"
                 if (!useEngine) plan.blocker?.let { error(it) }
-                onStatus(if (useEngine) "Driver: ${engine!!.entry.model ?: engine.entry.engine} (${engine.entry.engine})" else plan.note)
+                onStatus(if (useEngine) s(R.string.job_driver, engine!!.entry.model ?: engine.entry.engine, engine.entry.engine) else plan.note)
                 plan.driver?.takeIf { !store.isInstalled(it) }?.let {
-                    onStatus("Downloading driver ${it.name}…"); store.install(it)
+                    onStatus(s(R.string.job_downloading_driver, it.name)); store.install(it)
                 }
 
                 val o = opt.copy(paper = mediaFor(plan, useEngine, opt.paper, quirk?.mediaDefault))
-                if (o.paper != opt.paper) onStatus("Using ${o.paper.label} (pick another size to change it)")
+                if (o.paper != opt.paper) onStatus(s(R.string.job_using_paper, o.paper.label))
 
-                onStatus("Rendering…")
+                onStatus(s(R.string.job_rendering))
                 val dpi = when {
                     useEngine -> ENGINE_DPI[engine!!.entry.engine] ?: o.dpi
                     plan.language == Language.POSTSCRIPT -> 150
@@ -152,7 +153,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                     (quirk?.needsPjl == true || printer.deviceId?.commands?.any { it.equals("PJL", ignoreCase = true) } == true)
                 val (bytes, mime) = if (useEngine) runEngine(engine!!, doc, o, dpi, onStatus) else encode(plan.language, doc, o, dpi, pjl)
 
-                onStatus("Sending ${bytes.size / 1024} KiB to ${printer.name}…")
+                onStatus(s(R.string.job_sending, bytes.size / 1024, printer.name))
                 if (useEngine) {
                     // engine output is the printer's own language: raw port, never IPP document-format negotiation
                     openSink(printer.takeIf { it.transport != Transport.IPP } ?: printer.copy(transport = Transport.RAW_9100, port = 9100), usb, quirk, bytes.size.toLong(), onStatus).use { it.write(bytes) }
@@ -161,7 +162,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
                 } else {
                     openSink(printer, usb, quirk, bytes.size.toLong(), onStatus).use { it.write(bytes) }
                 }
-                onStatus("Sent ${doc.name}")
+                onStatus(s(R.string.job_sent, doc.name))
             } finally {
                 usbChannel?.close()
             }
@@ -176,7 +177,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
         val driverless = plan.driver == null && !plan.fallback && plan.language in SELF_SUFFICIENT
         if (driverless || plan.driver != null) return null
         val cat = runCatching { engines.catalogue() }.recoverCatching { engines.catalogue(refresh = true) }
-            .onFailure { onStatus("Driver catalogue unavailable: ${it.message}") }.getOrNull() ?: return null
+            .onFailure { onStatus(s(R.string.job_catalogue_unavailable, it.message ?: "")) }.getOrNull() ?: return null
         val m = cat.match(printer.deviceId, printer.name, PrinterIdentity.of(printer)) ?: return null
         return if (m.quality == Catalogue.Quality.GENERIC && !plan.fallback) null else m
     }
@@ -184,7 +185,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
     private fun runEngine(m: Catalogue.Match, doc: RenderedDoc, o: PrintOptions, dpi: Int, onStatus: (String) -> Unit): Pair<ByteArray, String> {
         val cat = engines.catalogue()
         val pack = cat.engines[m.entry.engine] ?: error("Catalogue has no engine ${m.entry.engine}")
-        if (!engines.isInstalled(pack)) onStatus("Downloading ${pack.id} driver…")
+        if (!engines.isInstalled(pack)) onStatus(s(R.string.job_downloading_pack, pack.id))
         val ppd = engines.ensurePpd(m.entry)
         val raster = Encoders.pwgRaster(doc.pages, o.paper, dpi, o.color, o.duplex, o.copies)
         val options = buildString {
@@ -192,7 +193,7 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
             if (!o.color) append(" print-color-mode=monochrome ColorModel=Gray")
             if (o.duplex) append(" sides=two-sided-long-edge")
         }
-        onStatus("Running ${pack.id}…")
+        onStatus(s(R.string.job_running, pack.id))
         return engines.run(pack, ppd, raster, doc.name, o.copies, options) to "application/octet-stream"
     }
 
@@ -219,11 +220,11 @@ class PrintJob(private val ctx: Context, private val store: DriverStore, private
 
     private fun openSink(p: Printer, usb: UsbManager, quirk: Quirk?, total: Long, onStatus: (String) -> Unit): PrintSink = when (p.transport) {
         Transport.BLE_BRIDGE -> {
-            if (total > BLE_SLOW_BYTES) onStatus("Sending ${total / 1024} KiB over Bluetooth: this can take a few minutes")
+            if (total > BLE_SLOW_BYTES) onStatus(s(R.string.job_bt_slow, total / 1024))
             var lastPct = -1
             BleSink(ctx, p.ble!!.address, total) { sent, all ->
                 val pct = (sent * 100 / all.coerceAtLeast(1)).toInt()
-                if (pct / 10 != lastPct / 10) { lastPct = pct; onStatus("Bluetooth: $pct% of ${all / 1024} KiB") }
+                if (pct / 10 != lastPct / 10) { lastPct = pct; onStatus(s(R.string.job_bt_progress, pct, all / 1024)) }
             }
         }
         Transport.USB_BULK -> UsbBulkSink(usb, p.usb!!, drainIn = quirk?.drainBulkIn == true)

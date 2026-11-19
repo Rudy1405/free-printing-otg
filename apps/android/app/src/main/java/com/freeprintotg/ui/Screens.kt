@@ -1,5 +1,6 @@
 package com.freeprintotg.ui
 
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -77,8 +78,8 @@ private fun StatusLine(vm: PrintViewModel, showInfo: Boolean) {
     when {
         vm.busy -> ProgressBanner(vm.status)
         vm.statusTone != Tone.Info -> Banner(vm.status, vm.statusTone)
-        vm.selected == null && vm.scanning -> ProgressBanner("Searching for printers…")
-        vm.selected == null -> Banner("No printer found yet. Plug one in by USB or pick a Wi-Fi printer.", Tone.Warning)
+        vm.selected == null && vm.scanning -> ProgressBanner(stringResource(R.string.status_searching))
+        vm.selected == null -> Banner(stringResource(R.string.status_no_printer), Tone.Warning)
         showInfo -> Banner(vm.status, Tone.Info)
     }
 }
@@ -93,8 +94,8 @@ private fun ColumnScope.HomeScreen(
     onSettings: () -> Unit,
 ) {
     AppHeader(
-        "Free Print OTG",
-        actions = { HeaderIcon(R.drawable.ic_settings, "Settings and log", onSettings) },
+        stringResource(R.string.app_name),
+        actions = { HeaderIcon(R.drawable.ic_settings, stringResource(R.string.settings_and_log_desc), onSettings) },
         below = { PrinterBar(vm.selected, onPrinters) },
     )
     Column(
@@ -102,18 +103,18 @@ private fun ColumnScope.HomeScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         if (vm.documents.isNotEmpty()) {
-            ActionCard(R.drawable.ic_printer, "Continue to print", "${vm.documents.size} file(s) chosen", onContinue)
+            ActionCard(R.drawable.ic_printer, stringResource(R.string.continue_print), stringResource(R.string.files_chosen, vm.documents.size), onContinue)
         }
-        ActionCard(R.drawable.ic_photo, "Photos & images", "JPEG, PNG, WebP", onPhotos)
-        ActionCard(R.drawable.ic_document, "Documents", "PDF and text files", onDocuments)
+        ActionCard(R.drawable.ic_photo, stringResource(R.string.photos_title), stringResource(R.string.photos_sub), onPhotos)
+        ActionCard(R.drawable.ic_document, stringResource(R.string.docs_title), stringResource(R.string.docs_sub), onDocuments)
         StatusLine(vm, showInfo = false)
         if (vm.selected == null) {
-            SectionTitle("Print over USB")
+            SectionTitle(stringResource(R.string.usb_guide_title))
             SectionCard {
-                StepRow(1, "Plug the printer into your phone with a USB OTG cable.")
-                StepRow(2, "Allow USB access when Android asks.")
-                StepRow(3, "Pick the printer in the bar above.")
-                Text("Wi-Fi printers on your network show up on their own.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                StepRow(1, stringResource(R.string.usb_step1))
+                StepRow(2, stringResource(R.string.usb_step2))
+                StepRow(3, stringResource(R.string.usb_step3))
+                Text(stringResource(R.string.wifi_auto), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
             }
         }
     }
@@ -124,13 +125,13 @@ private fun ColumnScope.PrintersScreen(vm: PrintViewModel, onBack: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     AppHeader(
-        "Printers",
+        stringResource(R.string.printers_title),
         onBack = onBack,
         actions = {
-            if (tab == 0) HeaderIcon(R.drawable.ic_add, "Add by IP address") { showAdd = true }
-            HeaderIcon(R.drawable.ic_refresh, "Scan again") { vm.refresh() }
+            if (tab == 0) HeaderIcon(R.drawable.ic_add, stringResource(R.string.add_by_ip_desc)) { showAdd = true }
+            HeaderIcon(R.drawable.ic_refresh, stringResource(R.string.scan_again)) { vm.refresh() }
         },
-        below = { HeaderTabs(listOf(R.drawable.ic_wifi to "Wi-Fi", R.drawable.ic_usb to "USB", R.drawable.ic_bluetooth to "Bluetooth"), tab) { tab = it } },
+        below = { HeaderTabs(listOf(R.drawable.ic_wifi to stringResource(R.string.tab_wifi), R.drawable.ic_usb to stringResource(R.string.tab_usb), R.drawable.ic_bluetooth to stringResource(R.string.tab_bluetooth)), tab) { tab = it } },
     )
     val list = vm.printers.filter {
         when (tab) {
@@ -145,41 +146,41 @@ private fun ColumnScope.PrintersScreen(vm: PrintViewModel, onBack: () -> Unit) {
         Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (vm.scanning) ProgressBanner("Searching…")
+        if (vm.scanning) ProgressBanner(stringResource(R.string.searching))
         list.forEach { p -> PrinterRow(p, vm.selected?.id == p.id) { vm.selected = p; onBack() } }
         if (tab == 2 && vm.busy) ProgressBanner(vm.status)
         else if (tab == 2 && vm.status.isNotBlank()) Banner(vm.status, vm.statusTone)
         if (tab == 2 && vm.bleMissing.isNotEmpty()) {
             EmptyState(
                 R.drawable.ic_bluetooth,
-                "Allow Bluetooth access",
-                "A PrintBridge lets this phone print to a USB printer without a cable. The app needs the Nearby devices permission to find it; it never uses your location.",
+                stringResource(R.string.ble_perm_title),
+                stringResource(R.string.ble_perm_body),
             )
         } else if (tab == 2 && vm.bleOff) {
-            EmptyState(R.drawable.ic_bluetooth, "Bluetooth is off", "Turn Bluetooth on, then scan again.")
+            EmptyState(R.drawable.ic_bluetooth, stringResource(R.string.ble_off_title), stringResource(R.string.ble_off_body))
         } else if (list.isEmpty() && !vm.scanning) {
             if (tab == 2) EmptyState(
                 R.drawable.ic_bluetooth,
-                "No PrintBridge found",
-                "Power the bridge with its USB cable and keep it within a few metres of this phone. A PrintBridge is an ESP32-S3 board plugged into the printer's USB port.",
+                stringResource(R.string.ble_none_title),
+                stringResource(R.string.ble_none_body),
             ) else if (tab == 0) EmptyState(
                 R.drawable.ic_wifi,
-                "No Wi-Fi printers found",
-                "Check that the printer is on and on the same Wi-Fi network as this phone. You can also add it by its IP address.",
+                stringResource(R.string.wifi_none_title),
+                stringResource(R.string.wifi_none_body),
             ) else EmptyState(
                 R.drawable.ic_usb,
-                "No USB printer found",
-                "Plug the printer in with a USB OTG cable and allow access when Android asks. If nothing appears, check the cable and that the printer is on. Some phones don't support USB host mode.",
+                stringResource(R.string.usb_none_title),
+                stringResource(R.string.usb_none_body),
             )
         }
     }
     // Thumb-zone actions
     Surface(color = Palette.Paper, shadowElevation = 8.dp) {
         Column(Modifier.navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (tab == 0) SecondaryButton("Add printer by IP address") { showAdd = true }
-            if (tab == 2 && vm.selected?.ble != null && !vm.busy) SecondaryButton("Connect this bridge to Wi-Fi") { showBridgeWifi = true }
-            if (tab == 2 && vm.bleMissing.isNotEmpty()) PrimaryButton("Allow Bluetooth access") { blePermissions.launch(vm.bleMissing.toTypedArray()) }
-            else PrimaryButton("Scan again") { vm.refresh() }
+            if (tab == 0) SecondaryButton(stringResource(R.string.add_printer_by_ip)) { showAdd = true }
+            if (tab == 2 && vm.selected?.ble != null && !vm.busy) SecondaryButton(stringResource(R.string.bridge_connect_wifi)) { showBridgeWifi = true }
+            if (tab == 2 && vm.bleMissing.isNotEmpty()) PrimaryButton(stringResource(R.string.ble_perm_title)) { blePermissions.launch(vm.bleMissing.toTypedArray()) }
+            else PrimaryButton(stringResource(R.string.scan_again)) { vm.refresh() }
         }
     }
     if (showAdd) AddPrinterDialog(
@@ -204,20 +205,20 @@ private fun BridgeWifiDialog(onDismiss: () -> Unit, onSave: (String, String) -> 
     val passOk = pass.isEmpty() || pass.length in 8..64
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bridge Wi-Fi") },
+        title = { Text(stringResource(R.string.bridge_wifi_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Press the bridge's BOOT button once, then save within 5 minutes. Android may ask to pair: accept it.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
-                OutlinedTextField(ssid, { ssid = it }, label = { Text("Network name (2.4 GHz)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.bridge_wifi_hint), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                OutlinedTextField(ssid, { ssid = it }, label = { Text(stringResource(R.string.network_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    pass, { pass = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    pass, { pass = it }, label = { Text(stringResource(R.string.password)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    isError = !passOk, supportingText = { if (!passOk) Text("8 to 64 characters, or empty for an open network") },
+                    isError = !passOk, supportingText = { if (!passOk) Text(stringResource(R.string.password_error)) },
                 )
             }
         },
-        confirmButton = { TextButton({ onSave(ssid, pass) }, enabled = ssid.isNotBlank() && passOk) { Text("Save", color = Palette.TurquoiseDeep) } },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel", color = Palette.InkSoft) } },
+        confirmButton = { TextButton({ onSave(ssid, pass) }, enabled = ssid.isNotBlank() && passOk) { Text(stringResource(R.string.save), color = Palette.TurquoiseDeep) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel), color = Palette.InkSoft) } },
     )
 }
 
@@ -229,43 +230,43 @@ private fun AddPrinterDialog(onDismiss: () -> Unit, onAdd: (String, Boolean) -> 
         onDismissRequest = onDismiss,
         containerColor = Palette.Paper,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Add printer by IP") },
+        title = { Text(stringResource(R.string.add_ip_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    host, { host = it }, label = { Text("Printer IP address") }, placeholder = { Text("192.168.1.50") }, singleLine = true,
+                    host, { host = it }, label = { Text(stringResource(R.string.ip_label)) }, placeholder = { Text("192.168.1.50") }, singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Palette.Turquoise, focusedLabelColor = Palette.TurquoiseDeep, cursorColor = Palette.Turquoise),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(raw, { raw = it }, colors = CheckboxDefaults.colors(checkedColor = Palette.TurquoiseDeep))
                     Column {
-                        Text("Older printer (raw port 9100)", style = MaterialTheme.typography.bodyLarge)
-                        Text("Leave off for most printers made after 2015.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                        Text(stringResource(R.string.older_printer), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.older_printer_hint), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
                     }
                 }
             }
         },
-        confirmButton = { TextButton({ onAdd(host, raw) }, enabled = host.isNotBlank()) { Text("Add", color = Palette.TurquoiseDeep) } },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel", color = Palette.InkSoft) } },
+        confirmButton = { TextButton({ onAdd(host, raw) }, enabled = host.isNotBlank()) { Text(stringResource(R.string.add), color = Palette.TurquoiseDeep) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel), color = Palette.InkSoft) } },
     )
 }
 
 @Composable
 private fun ColumnScope.PrintScreen(vm: PrintViewModel, onBack: () -> Unit, onPrinters: () -> Unit, onAddMore: () -> Unit, onWizard: () -> Unit) {
-    AppHeader("Print", onBack = onBack, below = { PrinterBar(vm.selected, onPrinters) })
+    AppHeader(stringResource(R.string.print_title), onBack = onBack, below = { PrinterBar(vm.selected, onPrinters) })
     Column(
         Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SectionTitle("Files (${vm.documents.size})")
+        SectionTitle(stringResource(R.string.files_title, vm.documents.size))
         vm.documents.toList().forEach { uri -> FileRow(uri) { vm.documents.remove(uri) } }
-        TextButton(onAddMore) { Text("+ Add more files", color = Palette.TurquoiseDeep, style = MaterialTheme.typography.labelLarge) }
+        TextButton(onAddMore) { Text(stringResource(R.string.add_more_files), color = Palette.TurquoiseDeep, style = MaterialTheme.typography.labelLarge) }
 
-        SectionTitle("Options")
+        SectionTitle(stringResource(R.string.options_title))
         SectionCard {
-            OptionRow("Color") { SoftChip(if (vm.options.color) "Color" else "Black & white", vm.options.color) { vm.options = vm.options.copy(color = !vm.options.color) } }
-            OptionRow("Sides") { SoftChip("Two-sided", vm.options.duplex) { vm.options = vm.options.copy(duplex = !vm.options.duplex) } }
-            OptionRow("Paper") {
+            OptionRow(stringResource(R.string.opt_color)) { SoftChip(if (vm.options.color) stringResource(R.string.color_on) else stringResource(R.string.color_off), vm.options.color) { vm.options = vm.options.copy(color = !vm.options.color) } }
+            OptionRow(stringResource(R.string.opt_sides)) { SoftChip(stringResource(R.string.two_sided), vm.options.duplex) { vm.options = vm.options.copy(duplex = !vm.options.duplex) } }
+            OptionRow(stringResource(R.string.opt_paper)) {
                 PaperSize.values().forEach { size ->
                     SoftChip(size.label, vm.options.paper == size) { vm.options = vm.options.copy(paper = size) }
                 }
@@ -273,17 +274,17 @@ private fun ColumnScope.PrintScreen(vm: PrintViewModel, onBack: () -> Unit, onPr
         }
         // Setup assistant (G4): for printers on a raw link that may not say which language they speak.
         if (vm.selected?.let(LanguageProbe::applies) == true) {
-            TextButton(onWizard) { Text("Prints garbage or nothing? Find the right setting", color = Palette.TurquoiseDeep, style = MaterialTheme.typography.labelLarge) }
+            TextButton(onWizard) { Text(stringResource(R.string.wizard_link), color = Palette.TurquoiseDeep, style = MaterialTheme.typography.labelLarge) }
         }
-        if (vm.busy) BusyBar("Printing")
+        if (vm.busy) BusyBar(stringResource(R.string.printing_desc))
         StatusLine(vm, showInfo = true)
     }
     Surface(color = Palette.Paper, shadowElevation = 8.dp) {
         Column(Modifier.navigationBarsPadding().padding(16.dp)) {
             when {
-                vm.busy -> PrimaryButton("Printing…", enabled = false) {}
-                vm.selected == null -> PrimaryButton("Choose a printer", onClick = onPrinters)
-                else -> PrimaryButton("Print") { vm.print() }
+                vm.busy -> PrimaryButton(stringResource(R.string.printing_btn), enabled = false) {}
+                vm.selected == null -> PrimaryButton(stringResource(R.string.choose_printer_btn), onClick = onPrinters)
+                else -> PrimaryButton(stringResource(R.string.print_btn)) { vm.print() }
             }
         }
     }
@@ -298,7 +299,7 @@ private fun FileRow(uri: Uri, onRemove: () -> Unit) {
         Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             IconTile(if (isImage) R.drawable.ic_photo else R.drawable.ic_document, size = 44.dp)
             Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IconButton(onRemove) { Icon(painterResource(R.drawable.ic_close), "Remove $name", tint = Palette.InkSoft) }
+            IconButton(onRemove) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.remove_file, name), tint = Palette.InkSoft) }
         }
     }
 }
@@ -310,13 +311,13 @@ private fun ColumnScope.SettingsScreen(vm: PrintViewModel, onBack: () -> Unit) {
     var serverUrl by remember { mutableStateOf(Settings.catalogueUrl(ctx)) }
     var saved by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
-    AppHeader("Settings & log", onBack = onBack)
+    AppHeader(stringResource(R.string.settings_title), onBack = onBack)
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionTitle("Appearance")
+        SectionTitle(stringResource(R.string.appearance_title))
         SectionCard {
-            Text("Choose light or dark, or follow the phone's setting.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+            Text(stringResource(R.string.appearance_desc), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark").forEach { (m, label) ->
+                listOf(ThemeMode.SYSTEM to stringResource(R.string.theme_system), ThemeMode.LIGHT to stringResource(R.string.theme_light), ThemeMode.DARK to stringResource(R.string.theme_dark)).forEach { (m, label) ->
                     FilterChip(
                         selected = ThemePrefs.mode == m, onClick = { ThemePrefs.set(ctx, m) }, label = { Text(label) },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Palette.TurquoiseTint, selectedLabelColor = Palette.Ink),
@@ -324,25 +325,25 @@ private fun ColumnScope.SettingsScreen(vm: PrintViewModel, onBack: () -> Unit) {
                 }
             }
         }
-        SectionTitle("Log")
+        SectionTitle(stringResource(R.string.log_title))
         SectionCard {
-            Text("If a print fails, copy the log and send it to whoever is helping you.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
-            SecondaryButton(if (copied) "Copied" else "Copy log") { clipboard.setText(AnnotatedString(AppLog.text())); copied = true }
-            if (AppLog.lines.isEmpty()) Text("Nothing logged yet.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+            Text(stringResource(R.string.log_desc), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+            SecondaryButton(if (copied) stringResource(R.string.copied) else stringResource(R.string.copy_log)) { clipboard.setText(AnnotatedString(AppLog.text())); copied = true }
+            if (AppLog.lines.isEmpty()) Text(stringResource(R.string.log_empty), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
             AppLog.lines.takeLast(40).forEach {
                 Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = Palette.Ink)
             }
         }
-        SectionTitle("Driver server")
+        SectionTitle(stringResource(R.string.driver_server_title))
         SectionCard {
-            Text("Only needed for printers that connect by USB and have no built-in driver.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+            Text(stringResource(R.string.driver_server_desc), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
             OutlinedTextField(
-                serverUrl, { serverUrl = it; saved = false }, label = { Text("Server address") }, placeholder = { Text("http://192.168.1.20:8000") },
+                serverUrl, { serverUrl = it; saved = false }, label = { Text(stringResource(R.string.server_address)) }, placeholder = { Text("http://192.168.1.20:8000") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Palette.Turquoise, focusedLabelColor = Palette.TurquoiseDeep, cursorColor = Palette.Turquoise),
             )
-            PrimaryButton("Save driver server") { vm.saveCatalogueUrl(serverUrl); saved = true }
-            if (saved) Banner("Saved. USB drivers will be downloaded from this server.", Tone.Info)
+            PrimaryButton(stringResource(R.string.save_driver_server)) { vm.saveCatalogueUrl(serverUrl); saved = true }
+            if (saved) Banner(stringResource(R.string.driver_server_saved), Tone.Info)
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.freeprintotg.ui
 
+import androidx.compose.ui.res.stringResource
 import android.app.Application
 import android.content.Intent
 import androidx.compose.foundation.layout.*
@@ -74,7 +75,7 @@ class LanguageWizardViewModel(app: Application) : AndroidViewModel(app) {
                 phase = Phase.Asking
             } catch (e: Exception) {
                 AppLog.d("Test page failed: ${e.message}")
-                message = "Could not send the test page: ${e.message}" to Tone.Error
+                message = getApplication<Application>().getString(R.string.wiz_test_failed, e.message) to Tone.Error
             } finally { busy = false }
         }
     }
@@ -82,7 +83,7 @@ class LanguageWizardViewModel(app: Application) : AndroidViewModel(app) {
     fun readable() {
         val lang = current ?: return
         val k = key
-        if (k == null) message = "This printer reports no name or address, so the choice cannot be remembered." to Tone.Warning
+        if (k == null) message = getApplication<Application>().getString(R.string.wiz_no_identity) to Tone.Warning
         else { LearnedLanguages.save(getApplication(), k, lang); saved = lang; AppLog.d("Assistant: saved $lang for $k") }
         phase = Phase.Done
     }
@@ -107,51 +108,51 @@ fun ColumnScope.LanguageWizardScreen(printer: Printer?, sheet: PaperSize, onBack
     val ctx = LocalContext.current
     LaunchedEffect(printer?.id) { printer?.let { vm.start(it, sheet) } }
 
-    AppHeader("Printer setup", onBack = onBack)
+    AppHeader(stringResource(R.string.wizard_title), onBack = onBack)
     Column(
         Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         val p = vm.printer
         when {
-            printer == null -> EmptyState(R.drawable.ic_printer, "No printer chosen", "Pick a printer first, then come back here.")
+            printer == null -> EmptyState(R.drawable.ic_printer, stringResource(R.string.wiz_no_printer_title), stringResource(R.string.wiz_no_printer_body))
             p != null && !LanguageProbe.applies(p) -> EmptyState(
-                R.drawable.ic_printer, "No setup needed",
-                "This printer tells the app which formats it accepts, so there is nothing to test.",
+                R.drawable.ic_printer, stringResource(R.string.wiz_no_setup_title),
+                stringResource(R.string.wiz_no_setup_body),
             )
             p != null -> {
                 SectionTitle(p.name)
                 vm.saved?.let { lang ->
                     SectionCard {
-                        Text("This printer is set to ${lang.title}.", style = MaterialTheme.typography.bodyLarge)
-                        if (vm.phase != LanguageWizardViewModel.Phase.Done) SecondaryButton("Forget this setting") { vm.forget() }
+                        Text(stringResource(R.string.wiz_set_to, lang.title), style = MaterialTheme.typography.bodyLarge)
+                        if (vm.phase != LanguageWizardViewModel.Phase.Done) SecondaryButton(stringResource(R.string.wiz_forget)) { vm.forget() }
                     }
                 }
                 val total = vm.candidates.size
                 when (vm.phase) {
                     LanguageWizardViewModel.Phase.Ready -> SectionCard {
                         if (vm.index == 0) {
-                            StepRow(1, "The app prints one short test page per printer language, up to $total.")
-                            StepRow(2, "Watch the printer after each one.")
-                            StepRow(3, "Say whether a readable page came out. Garbage or nothing means no.")
-                            Text("Each test may use one sheet, label or a bit of receipt paper.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                            StepRow(1, stringResource(R.string.wiz_step1, total))
+                            StepRow(2, stringResource(R.string.wiz_step2))
+                            StepRow(3, stringResource(R.string.wiz_step3))
+                            Text(stringResource(R.string.wiz_each_test), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
                         }
-                        Text("Next: test ${vm.index + 1} of $total, ${vm.current?.title}", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.wiz_next, vm.index + 1, total, vm.current?.title.orEmpty()), style = MaterialTheme.typography.titleMedium)
                     }
                     LanguageWizardViewModel.Phase.Asking -> SectionCard {
-                        Text("Did a readable page come out for ${vm.current?.title}?", style = MaterialTheme.typography.titleMedium)
-                        Text("Wait a few seconds: some printers are slow to start.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                        Text(stringResource(R.string.wiz_did_read, vm.current?.title.orEmpty()), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.wiz_wait), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
                     }
                     LanguageWizardViewModel.Phase.Done -> SectionCard {
-                        Text("Saved. Your next prints to this printer use ${vm.saved?.title ?: vm.current?.title}.", style = MaterialTheme.typography.bodyLarge)
-                        Text("Sharing the setting helps add this printer to the app's list for everyone.", style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
+                        Text(stringResource(R.string.wiz_saved, (vm.saved?.title ?: vm.current?.title).orEmpty()), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.wiz_share_help), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
                     }
                     LanguageWizardViewModel.Phase.NoneWorked -> Banner(
-                        "None of the $total languages worked. The printer may need a driver pack (set a driver server in Settings) or work only with its Windows driver. Copy the log in Settings to report it.",
+                        stringResource(R.string.wiz_none_worked, total),
                         Tone.Warning,
                     )
                 }
-                if (vm.busy) ProgressBanner(vm.message?.first ?: "Sending test page…")
+                if (vm.busy) ProgressBanner(vm.message?.first ?: stringResource(R.string.wiz_sending_test))
                 else vm.message?.let { (text, tone) -> Banner(text, tone) }
             }
         }
@@ -162,25 +163,26 @@ fun ColumnScope.LanguageWizardScreen(printer: Printer?, sheet: PaperSize, onBack
             Column(Modifier.navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (vm.phase) {
                     LanguageWizardViewModel.Phase.Ready -> {
-                        SecondaryButton("Skip ${vm.current?.title}") { vm.skip() }
-                        PrimaryButton(if (vm.busy) "Sending…" else "Print test ${vm.index + 1} of ${vm.candidates.size}", enabled = !vm.busy) { vm.sendTest() }
+                        SecondaryButton(stringResource(R.string.wiz_skip, vm.current?.title.orEmpty())) { vm.skip() }
+                        PrimaryButton(if (vm.busy) stringResource(R.string.wiz_sending) else stringResource(R.string.wiz_print_test, vm.index + 1, vm.candidates.size), enabled = !vm.busy) { vm.sendTest() }
                     }
                     LanguageWizardViewModel.Phase.Asking -> {
-                        TextButton({ vm.sendTest() }, enabled = !vm.busy) { Text("Print it again", color = Palette.TurquoiseDeep) }
-                        SecondaryButton("No: nothing or garbage") { vm.notReadable() }
-                        PrimaryButton("Yes, it's readable") { vm.readable() }
+                        TextButton({ vm.sendTest() }, enabled = !vm.busy) { Text(stringResource(R.string.wiz_print_again), color = Palette.TurquoiseDeep) }
+                        SecondaryButton(stringResource(R.string.wiz_no)) { vm.notReadable() }
+                        PrimaryButton(stringResource(R.string.wiz_yes)) { vm.readable() }
                     }
                     LanguageWizardViewModel.Phase.Done -> {
                         vm.shareText()?.let { json ->
-                            SecondaryButton("Share this setting") {
-                                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, json), "Share printer setting"))
+                            val shareTitle = stringResource(R.string.wiz_share_title)
+                            SecondaryButton(stringResource(R.string.wiz_share)) {
+                                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, json), shareTitle))
                             }
                         }
-                        PrimaryButton("Done", onClick = onBack)
+                        PrimaryButton(stringResource(R.string.done), onClick = onBack)
                     }
                     LanguageWizardViewModel.Phase.NoneWorked -> {
-                        SecondaryButton("Start over") { vm.restart() }
-                        PrimaryButton("Done", onClick = onBack)
+                        SecondaryButton(stringResource(R.string.start_over)) { vm.restart() }
+                        PrimaryButton(stringResource(R.string.done), onClick = onBack)
                     }
                 }
             }

@@ -1,5 +1,6 @@
 package com.freeprintotg.ui
 
+import androidx.compose.ui.res.stringResource
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -40,7 +41,7 @@ fun AppHeader(
     Surface(color = Palette.Turquoise, contentColor = Palette.OnTurquoise, shadowElevation = 6.dp) {
         Column(Modifier.statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) HeaderIcon(R.drawable.ic_back, "Back", onBack) else Spacer(Modifier.width(16.dp))
+                if (onBack != null) HeaderIcon(R.drawable.ic_back, stringResource(R.string.back), onBack) else Spacer(Modifier.width(16.dp))
                 Text(
                     title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -86,16 +87,16 @@ fun HeaderTabs(tabs: List<Pair<Int, String>>, selected: Int, onSelect: (Int) -> 
 fun PrinterBar(printer: Printer?, onClick: (() -> Unit)?) {
     Row(
         Modifier.fillMaxWidth()
-            .let { if (onClick != null) it.clickable(role = Role.Button, onClickLabel = "Choose printer", onClick = onClick) else it }
+            .let { if (onClick != null) it.clickable(role = Role.Button, onClickLabel = stringResource(R.string.choose_printer_label), onClick = onClick) else it }
             .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         IconTile(R.drawable.ic_printer, size = 46.dp, background = Color.White, tint = Palette.TurquoiseOnWhite, shape = CircleShape)
         Column(Modifier.weight(1f)) {
-            Text(printer?.name ?: "No printer selected", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(printer?.name ?: stringResource(R.string.no_printer_selected), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                if (printer != null) printerSubtitle(printer) else "Tap to choose a Wi-Fi or USB printer",
+                if (printer != null) printerSubtitle(printer) else stringResource(R.string.tap_to_choose),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Palette.OnTurquoise.copy(alpha = 0.9f),
                 maxLines = 1,
@@ -106,9 +107,10 @@ fun PrinterBar(printer: Printer?, onClick: (() -> Unit)?) {
     }
 }
 
+@Composable
 fun printerSubtitle(p: Printer) = when {
-    p.usb != null -> "USB (OTG)"
-    p.ble != null -> "Bluetooth bridge"
+    p.usb != null -> stringResource(R.string.sub_usb)
+    p.ble != null -> stringResource(R.string.sub_bridge)
     else -> "${p.transport} · ${p.host}"
 }
 
@@ -179,9 +181,9 @@ enum class Tone { Info, Warning, Error }
 @Composable
 fun Banner(text: String, tone: Tone) {
     val (bg, icon, accent, label) = when (tone) {
-        Tone.Info -> BannerStyle(Palette.Mist, R.drawable.ic_info, Palette.InkSoft, "Info")
-        Tone.Warning -> BannerStyle(Palette.AmberTint, R.drawable.ic_warning, Palette.AmberDeep, "Warning")
-        Tone.Error -> BannerStyle(Palette.RedTint, R.drawable.ic_error, Palette.Red, "Error")
+        Tone.Info -> BannerStyle(Palette.Mist, R.drawable.ic_info, Palette.InkSoft, stringResource(R.string.tone_info))
+        Tone.Warning -> BannerStyle(Palette.AmberTint, R.drawable.ic_warning, Palette.AmberDeep, stringResource(R.string.tone_warning))
+        Tone.Error -> BannerStyle(Palette.RedTint, R.drawable.ic_error, Palette.Red, stringResource(R.string.tone_error))
     }
     Row(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(bg).padding(12.dp),
@@ -225,7 +227,7 @@ fun PrinterRow(p: Printer, selected: Boolean, onClick: () -> Unit) {
                 Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(printerSubtitle(p), style = MaterialTheme.typography.bodyMedium, color = Palette.InkSoft)
             }
-            if (selected) Icon(painterResource(R.drawable.ic_check), "Selected", tint = Palette.TurquoiseDeep)
+            if (selected) Icon(painterResource(R.drawable.ic_check), stringResource(R.string.selected), tint = Palette.TurquoiseDeep)
         }
     }
 }
